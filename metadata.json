@@ -1,0 +1,5 @@
+{
+  "name": "Aplikasi Wisuda SMK",
+  "description": "Aplikasi manajemen wisuda dengan fitur upload data, pengaturan tempat duduk, dan tampilan layar proyektor.",
+  "requestFramePermissions": []
+}
