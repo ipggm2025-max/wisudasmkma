@@ -215,6 +215,7 @@ export default function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploadingData, setIsUploadingData] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [deletingStudentId, setDeletingStudentId] = useState<string | null>(null);
 
   const fetchUserRole = async (email: string) => {
@@ -660,17 +661,17 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.1 }}
               transition={{ duration: 0.8, ease: "easeOut" }}
-              className="w-full h-full flex flex-col md:flex-row items-center justify-center gap-12 p-12 pt-48"
+              className="w-full h-full flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-12 p-6 lg:p-12 pt-32 lg:pt-48 overflow-y-auto lg:overflow-hidden"
             >
               {/* Photo Section */}
-              <div className="w-full md:w-1/2 flex justify-center">
+              <div className="w-full lg:w-1/2 flex justify-center">
                 <motion.div 
                   initial={{ opacity: 0, x: -100, rotateY: -20 }}
                   animate={{ opacity: 1, x: 0, rotateY: 0 }}
                   transition={{ duration: 1, ease: "easeOut" }}
-                  className="relative group"
+                  className="relative group w-full max-w-[320px] sm:max-w-[420px]"
                 >
-                  <div className="absolute -inset-8 bg-gradient-to-tr from-green-500/40 via-yellow-500/20 to-green-500/40 rounded-[40px] blur-3xl opacity-60 animate-pulse"></div>
+                  <div className="absolute -inset-4 sm:-inset-8 bg-gradient-to-tr from-green-500/40 via-yellow-500/20 to-green-500/40 rounded-[40px] blur-3xl opacity-60 animate-pulse"></div>
                   <motion.div 
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ 
@@ -683,13 +684,13 @@ export default function App() {
                       scale: { duration: 0.5 },
                       y: { duration: 4, repeat: Infinity, ease: "easeInOut" }
                     }}
-                    className="relative w-[420px] h-[520px] bg-gray-800 rounded-[32px] overflow-hidden border-8 border-white shadow-[0_0_50px_rgba(34,197,94,0.3)]"
+                    className="relative w-full aspect-[4/5] bg-gray-800 rounded-[32px] overflow-hidden border-4 sm:border-8 border-white shadow-[0_0_30px_rgba(34,197,94,0.3)] sm:shadow-[0_0_50px_rgba(34,197,94,0.3)]"
                   >
                     {currentStudent.photoUrl ? (
                       <img src={currentStudent.photoUrl} className="w-full h-full object-cover" alt={currentStudent.name} referrerPolicy="no-referrer" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                        <Users className="w-32 h-32 text-gray-700" />
+                        <Users className="w-24 sm:w-32 h-24 sm:h-32 text-gray-700" />
                       </div>
                     )}
                   </motion.div>
@@ -697,21 +698,21 @@ export default function App() {
               </div>
 
               {/* Info Section */}
-              <div className="w-full md:w-1/2 text-left space-y-8">
+              <div className="w-full lg:w-1/2 text-center lg:text-left space-y-6 lg:space-y-8">
                 <motion.div
                   initial={{ x: 100, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
                   transition={{ delay: 0.4, duration: 0.8 }}
                 >
-                  <h2 className="text-xl font-mono text-[#81C784] uppercase tracking-[0.5em] mb-4">Wisudawan</h2>
-                  <h1 className="text-8xl font-serif font-bold leading-tight mb-6 bg-gradient-to-r from-white via-green-100 to-white bg-clip-text text-transparent bg-[length:200%_auto] animate-shimmer">
+                  <h2 className="text-sm sm:text-xl font-mono text-[#81C784] uppercase tracking-[0.3em] sm:tracking-[0.5em] mb-2 sm:mb-4">Wisudawan</h2>
+                  <h1 className="text-4xl sm:text-6xl lg:text-8xl font-serif font-bold leading-tight mb-4 sm:mb-6 bg-gradient-to-r from-white via-green-100 to-white bg-clip-text text-transparent bg-[length:200%_auto] animate-shimmer">
                     {currentStudent.name}
                   </h1>
                   <motion.div 
                     initial={{ width: 0 }}
                     animate={{ width: 128 }}
                     transition={{ delay: 1, duration: 1 }}
-                    className="h-1.5 bg-gradient-to-r from-[#81C784] to-yellow-400"
+                    className="h-1.5 bg-gradient-to-r from-[#81C784] to-yellow-400 mx-auto lg:mx-0"
                   />
                 </motion.div>
 
@@ -719,41 +720,41 @@ export default function App() {
                   initial={{ x: 50, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
                   transition={{ delay: 0.5 }}
-                  className="grid grid-cols-2 gap-8"
+                  className="grid grid-cols-2 gap-4 sm:gap-8"
                 >
                   <div>
-                    <p className="text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Jurusan</p>
-                    <p className="text-2xl font-medium">{currentStudent.major}</p>
+                    <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Jurusan</p>
+                    <p className="text-lg sm:text-2xl font-medium">{currentStudent.major}</p>
                   </div>
                   {currentStudent.class && (
                     <div>
-                      <p className="text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Kelas</p>
-                      <p className="text-2xl font-medium">{currentStudent.class}</p>
+                      <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Kelas</p>
+                      <p className="text-lg sm:text-2xl font-medium">{currentStudent.class}</p>
                     </div>
                   )}
                   <div>
-                    <p className="text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Rata-rata Nilai</p>
-                    <p className="text-2xl font-medium">{currentStudent.grade || '-'}</p>
+                    <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Rata-rata Nilai</p>
+                    <p className="text-lg sm:text-2xl font-medium">{currentStudent.grade || '-'}</p>
                   </div>
                   {currentStudent.predicate && (
                     <div className="col-span-2">
-                      <p className="text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Predikat</p>
-                      <p className="text-3xl font-serif italic text-[#81C784]">{currentStudent.predicate}</p>
+                      <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Predikat</p>
+                      <p className="text-xl sm:text-3xl font-serif italic text-[#81C784]">{currentStudent.predicate}</p>
                     </div>
                   )}
                   {currentStudent.achievement && (
                     <div className="col-span-2">
-                      <p className="text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Prestasi</p>
-                      <p className="text-xl text-gray-300">{currentStudent.achievement}</p>
+                      <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Prestasi</p>
+                      <p className="text-base sm:text-xl text-gray-300">{currentStudent.achievement}</p>
                     </div>
                   )}
                   <div className="col-span-2">
-                    <p className="text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Orang Tua</p>
-                    <p className="text-2xl font-medium">{currentStudent.parentName || '-'}</p>
+                    <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Orang Tua</p>
+                    <p className="text-lg sm:text-2xl font-medium">{currentStudent.parentName || '-'}</p>
                   </div>
                   <div className="col-span-2">
-                    <p className="text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Alamat</p>
-                    <p className="text-lg text-gray-300">{currentStudent.address || '-'}</p>
+                    <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Alamat</p>
+                    <p className="text-sm sm:text-lg text-gray-300">{currentStudent.address || '-'}</p>
                   </div>
                 </motion.div>
               </div>
@@ -792,9 +793,45 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-[#F5F5F0] flex">
+      <div className="min-h-screen bg-[#F5F5F0] flex relative">
+        {/* Mobile Header */}
+        <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1a1a] text-white flex items-center justify-between px-6 z-30 border-b border-white/5 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 flex items-center justify-center overflow-hidden">
+              {schoolLogo ? (
+                <img src={schoolLogo} className="w-full h-full object-contain" alt="Logo" />
+              ) : (
+                <Users className="w-5 h-5 text-white/50" />
+              )}
+            </div>
+            <h1 className="text-sm font-serif font-bold truncate max-w-[200px]">{schoolName}</h1>
+          </div>
+          <button 
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+          >
+            {isSidebarOpen ? <Minimize2 className="w-6 h-6" /> : <ListIcon className="w-6 h-6" />}
+          </button>
+        </div>
+
+        {/* Sidebar Overlay */}
+        <AnimatePresence>
+          {isSidebarOpen && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+            />
+          )}
+        </AnimatePresence>
+
         {/* Sidebar */}
-        <aside className="w-80 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] text-white flex flex-col p-8 fixed h-full z-20 border-r border-white/5 shadow-2xl">
+        <aside className={cn(
+          "w-80 bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a] text-white flex flex-col p-8 fixed h-full z-50 border-r border-white/5 shadow-2xl transition-transform duration-300 lg:translate-x-0",
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        )}>
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -810,7 +847,7 @@ export default function App() {
             <h1 className="text-xl font-serif font-bold leading-tight">{schoolName}</h1>
           </motion.div>
 
-          <nav className="flex-1 space-y-2">
+          <nav className="flex-1 space-y-2 overflow-y-auto custom-scrollbar pr-2">
             {[
               { id: 'list', icon: ListIcon, label: 'Data Siswa' },
               { id: 'upload', icon: Upload, label: 'Unggah Data' },
@@ -824,7 +861,10 @@ export default function App() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
+                  onClick={() => {
+                    setActiveTab(tab.id as any);
+                    setIsSidebarOpen(false);
+                  }}
                   className={cn(
                     "w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300 group relative overflow-hidden",
                     activeTab === tab.id 
@@ -842,7 +882,10 @@ export default function App() {
             })}
             <div className="pt-8 border-t border-white/10 mt-8">
               <button 
-                onClick={() => setView('projector')}
+                onClick={() => {
+                  setView('projector');
+                  setIsSidebarOpen(false);
+                }}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/5 text-white hover:bg-white/10 transition-all border border-white/5"
               >
                 <Monitor className="w-5 h-5" />
@@ -876,18 +919,18 @@ export default function App() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 ml-80 min-h-screen bg-[#F8F9FA] relative overflow-y-auto custom-scrollbar">
+        <main className="flex-1 lg:ml-80 min-h-screen bg-[#F8F9FA] relative overflow-y-auto custom-scrollbar pt-16 lg:pt-0">
           {/* Decorative Background Gradients */}
           <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-100/20 rounded-full blur-[120px] -z-10" />
           <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-blue-100/10 rounded-full blur-[120px] -z-10" />
 
-          <div className="max-w-7xl mx-auto p-8 space-y-8">
-            <header className="flex justify-between items-end">
+          <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
               <div>
                 <motion.h2 
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className="text-4xl font-serif font-bold text-gray-900 tracking-tight"
+                  className="text-3xl md:text-4xl font-serif font-bold text-gray-900 tracking-tight"
                 >
                   {activeTab === 'list' && "Manajemen Siswa"}
                   {activeTab === 'upload' && "Unggah Data Siswa"}
@@ -911,15 +954,15 @@ export default function App() {
               </div>
               
               {activeTab === 'list' && (
-                <div className="flex items-center gap-4">
-                  <div className="relative group">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
+                  <div className="relative group flex-1 sm:flex-none">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 group-focus-within:text-[#2e7d32] transition-colors" />
                     <input 
                       type="text" 
                       placeholder="Cari nama atau jurusan..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-12 pr-6 py-3 bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2e7d32] w-80 shadow-sm transition-all"
+                      className="pl-12 pr-6 py-3 bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2e7d32] w-full sm:w-64 lg:w-80 shadow-sm transition-all"
                     />
                   </div>
                   <motion.button 
@@ -942,10 +985,10 @@ export default function App() {
                       setDuplicateWarning(null);
                       setIsStudentModalOpen(true);
                     }}
-                    className="bg-gradient-to-r from-[#2e7d32] to-[#43a047] text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-green-900/20 flex items-center gap-2"
+                    className="bg-gradient-to-r from-[#2e7d32] to-[#43a047] text-white px-6 md:px-8 py-3 rounded-2xl font-bold shadow-lg shadow-green-900/20 flex items-center justify-center gap-2"
                   >
                     <UserPlus className="w-5 h-5" />
-                    Tambah Siswa
+                    <span className="whitespace-nowrap">Tambah Siswa</span>
                   </motion.button>
                 </div>
               )}
@@ -962,10 +1005,10 @@ export default function App() {
                   <table className="w-full text-left">
                     <thead>
                       <tr className="bg-gray-50/50">
-                        <th className="px-6 py-5 text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Wisudawan</th>
-                        <th className="px-6 py-5 text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Jurusan & Kelas</th>
-                        <th className="px-6 py-5 text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Status</th>
-                        <th className="px-6 py-5 text-sm font-black text-gray-400 uppercase tracking-[0.2em] text-right">Aksi</th>
+                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Wisudawan</th>
+                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em] hidden md:table-cell">Jurusan & Kelas</th>
+                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Status</th>
+                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em] text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -978,71 +1021,76 @@ export default function App() {
                             transition={{ delay: index * 0.03 }}
                             className="hover:bg-green-50/30 transition-colors group"
                           >
-                            <td className="px-6 py-5">
-                              <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-gray-100 rounded-xl overflow-hidden border border-gray-100 group-hover:border-green-200 transition-colors">
+                            <td className="px-2 md:px-6 py-5">
+                              <div className="flex items-center gap-2 md:gap-4">
+                                <div className="w-10 h-10 md:w-12 md:h-12 bg-gray-100 rounded-xl overflow-hidden border border-gray-100 group-hover:border-green-200 transition-colors flex-shrink-0">
                                   {student.photoUrl ? (
                                     <img src={student.photoUrl} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
                                   ) : (
                                     <div className="w-full h-full flex items-center justify-center">
-                                      <Users className="w-6 h-6 text-gray-300" />
+                                      <Users className="w-5 h-5 md:w-6 md:h-6 text-gray-300" />
                                     </div>
                                   )}
                                 </div>
                                 <div>
-                                  <p className="font-bold text-gray-900 text-lg">{student.name}</p>
-                                  <p className="text-sm text-gray-400 font-bold uppercase tracking-wider">NISN: {student.nisn || student.id.slice(0, 8)}</p>
+                                  <p className="font-bold text-gray-900 text-sm md:text-lg leading-tight">{student.name}</p>
+                                  <p className="text-[10px] md:text-sm text-gray-400 font-bold uppercase tracking-wider">NISN: {student.nisn || student.id.slice(0, 8)}</p>
+                                  <div className="md:hidden mt-1">
+                                    <span className="text-[10px] font-bold text-blue-600 uppercase bg-blue-50 px-1.5 py-0.5 rounded-md mr-1">{student.major}</span>
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase bg-gray-50 px-1.5 py-0.5 rounded-md">{student.class || '-'}</span>
+                                  </div>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-6 py-5">
+                            <td className="px-2 md:px-6 py-5 hidden md:table-cell">
                               <div className="flex flex-col">
                                 <span className="text-sm font-bold text-gray-700">{student.major}</span>
                                 <span className="text-xs text-gray-400 font-bold uppercase">{student.class || '-'}</span>
                               </div>
                             </td>
-                            <td className="px-6 py-5">
+                            <td className="px-2 md:px-6 py-5">
                               <button 
                                 onClick={() => toggleCalled(student)}
                                 className={cn(
-                                  "flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black uppercase transition-all",
+                                  "flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 rounded-full text-[10px] md:text-xs font-black uppercase transition-all",
                                   student.isCalled ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"
                                 )}
                               >
-                                {student.isCalled ? <CheckCircle className="w-4 h-4" /> : <div className="w-4 h-4 rounded-full border-2 border-current" />}
-                                {student.isCalled ? "Hadir" : "Belum"}
+                                {student.isCalled ? <CheckCircle className="w-3 h-3 md:w-4 md:h-4" /> : <div className="w-3 h-3 md:w-4 md:h-4 rounded-full border-2 border-current" />}
+                                <span className="hidden sm:inline">{student.isCalled ? "Hadir" : "Belum"}</span>
+                                <span className="sm:hidden">{student.isCalled ? "H" : "B"}</span>
                               </button>
                             </td>
                             <td className="px-6 py-5 text-right">
-                              <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex justify-end gap-1 md:gap-2">
                                 <button 
                                   onClick={() => {
                                     setEditingStudent(student);
                                     setDuplicateWarning(null);
                                     setIsStudentModalOpen(true);
                                   }}
-                                  className="p-2.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                  className="p-1.5 md:p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                                   title="Ubah"
                                 >
-                                  <Edit2 className="w-5 h-5" />
+                                  <Edit2 className="w-4 h-4 md:w-5 md:h-5" />
                                 </button>
                                 <button 
                                   onClick={() => {
                                     setCurrentStudentIndex(students.findIndex(s => s.id === student.id));
                                     setView('projector');
                                   }}
-                                  className="p-2.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  className="p-1.5 md:p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                   title="Tampilkan di Layar"
                                 >
-                                  <Monitor className="w-5 h-5" />
+                                  <Monitor className="w-4 h-4 md:w-5 md:h-5" />
                                 </button>
                                 {userRole === 'admin' && (
                                   <button 
                                     onClick={() => setDeletingStudentId(student.id)}
-                                    className="p-2.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                     title="Hapus"
                                   >
-                                    <Trash2 className="w-5 h-5" />
+                                    <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
                                   </button>
                                 )}
                               </div>
@@ -1381,12 +1429,12 @@ export default function App() {
                       className="glass-card rounded-[32px] border border-white/20 shadow-xl overflow-hidden flex flex-col group"
                     >
                       {/* Preview Card */}
-                      <div className="p-8 flex gap-6 items-start relative overflow-hidden">
+                      <div className="p-6 md:p-8 flex flex-col sm:flex-row gap-6 items-start relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-green-100/30 rounded-bl-full -mr-10 -mt-10 blur-2xl group-hover:bg-green-200/40 transition-colors" />
                         
-                        <div className="w-28 h-36 bg-white rounded-2xl overflow-hidden border-4 border-white shadow-lg flex-shrink-0 relative z-10">
+                        <div className="w-28 h-36 bg-white rounded-2xl overflow-hidden border-4 border-white shadow-lg flex-shrink-0 relative z-10 mx-auto sm:mx-0">
                           {student.photoUrl ? (
-                            <img src={student.photoUrl} className="w-full h-full object-cover" alt="" />
+                            <img src={student.photoUrl} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center bg-green-50">
                               <Users className="w-10 h-10 text-green-200" />
@@ -1394,7 +1442,7 @@ export default function App() {
                           )}
                         </div>
                         
-                        <div className="flex-1 space-y-4 relative z-10">
+                        <div className="flex-1 space-y-4 relative z-10 w-full">
                           <div className="pb-4 border-b border-dashed border-green-200/50">
                             <h4 className="text-xs font-mono text-[#2e7d32] uppercase tracking-[0.2em] mb-1 font-black">Undangan Wisuda</h4>
                             <h3 className="text-xl font-serif font-bold text-gray-900 truncate">{student.name}</h3>
@@ -1522,9 +1570,9 @@ export default function App() {
             {activeTab === 'registration' && (
               <div className="space-y-6">
                 {/* Compact Bento Stats & Charts Row */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-6">
                   {/* Stats Column */}
-                  <div className="lg:col-span-3 space-y-4">
+                  <div className="sm:col-span-2 lg:col-span-3 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-4">
                     {[
                       { label: 'Total Wisudawan', value: students.length, icon: Users, gradient: 'from-blue-600 to-blue-400', shadow: 'shadow-blue-200' },
                       { label: 'Sudah Registrasi', value: students.filter(s => s.isCalled).length, icon: CheckCircle, gradient: 'from-green-600 to-emerald-400', shadow: 'shadow-green-200' },
@@ -1547,7 +1595,7 @@ export default function App() {
                           </div>
                           <div>
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">{stat.label}</p>
-                            <p className="text-2xl font-black text-gray-900 leading-none">{stat.value}</p>
+                            <p className="text-xl md:text-2xl font-black text-gray-900 leading-none">{stat.value}</p>
                           </div>
                         </div>
                       </motion.div>
@@ -1559,7 +1607,7 @@ export default function App() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.3 }}
-                    className="lg:col-span-4 bg-white p-5 rounded-[32px] border border-gray-100 shadow-xl flex flex-col relative overflow-hidden group"
+                    className="lg:col-span-4 bg-white p-5 rounded-[32px] border border-gray-100 shadow-xl flex flex-col relative overflow-hidden group min-h-[280px]"
                   >
                     <div className="absolute top-0 right-0 w-32 h-32 bg-green-50 rounded-full -mr-16 -mt-16 opacity-50 blur-2xl group-hover:scale-110 transition-transform duration-700" />
                     <div className="flex items-center justify-between mb-2 relative z-10">
@@ -1615,7 +1663,7 @@ export default function App() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.4 }}
-                    className="lg:col-span-5 bg-white p-5 rounded-[32px] border border-gray-100 shadow-xl relative overflow-hidden group"
+                    className="lg:col-span-5 bg-white p-5 rounded-[32px] border border-gray-100 shadow-xl relative overflow-hidden group min-h-[280px]"
                   >
                     <div className="absolute bottom-0 left-0 w-32 h-32 bg-blue-50 rounded-full -ml-16 -mb-16 opacity-50 blur-2xl group-hover:scale-110 transition-transform duration-700" />
                     <div className="flex items-center justify-between mb-4 relative z-10">
@@ -1663,7 +1711,7 @@ export default function App() {
                 </div>
 
                 {/* Gender & Major Quick List - Row */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6">
                   {/* Gender Stats - Very Compact */}
                   <motion.div 
                     initial={{ opacity: 0, y: 20 }}
@@ -1733,8 +1781,8 @@ export default function App() {
                   transition={{ delay: 0.7 }}
                   className="bg-white rounded-[32px] border border-gray-100 shadow-2xl overflow-hidden"
                 >
-                  <div className="p-5 border-b border-gray-50 flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-gradient-to-r from-white to-gray-50/50">
-                    <div className="flex flex-col md:flex-row md:items-center gap-4">
+                  <div className="p-5 border-b border-gray-50 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-gradient-to-r from-white to-gray-50/50">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                       <div>
                         <h3 className="text-xl font-serif font-bold text-gray-900">Registrasi Kehadiran</h3>
                         <p className="text-xs text-gray-500 font-medium">Konfirmasi kehadiran wisudawan di lokasi.</p>
@@ -1764,7 +1812,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="relative w-full xl:w-72 group">
+                    <div className="relative w-full lg:w-72 group">
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 group-focus-within:text-green-600 transition-colors" />
                       <input 
                         type="text" 
@@ -1781,8 +1829,8 @@ export default function App() {
                       <thead>
                         <tr className="bg-gray-50/50">
                           <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Wisudawan</th>
-                          <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em] text-center">Gender</th>
-                          <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Kelas</th>
+                          <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em] text-center hidden sm:table-cell">Gender</th>
+                          <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em] hidden md:table-cell">Kelas</th>
                           <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Status</th>
                           <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em] text-right">Aksi</th>
                         </tr>
@@ -1802,12 +1850,16 @@ export default function App() {
                                   )}
                                 </div>
                                 <div>
-                                  <p className="font-bold text-gray-900 text-sm">{student.name}</p>
-                                  <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">{student.major}</p>
+                                  <p className="font-bold text-gray-900 text-sm leading-tight">{student.name}</p>
+                                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{student.major}</p>
+                                  <div className="sm:hidden mt-0.5 flex gap-1">
+                                    <span className="text-[8px] font-bold text-gray-500 uppercase bg-gray-100 px-1 rounded">{student.gender || '-'}</span>
+                                    <span className="text-[8px] font-bold text-gray-500 uppercase bg-gray-100 px-1 rounded">{student.class || '-'}</span>
+                                  </div>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-6 py-3 text-center">
+                            <td className="px-6 py-3 text-center hidden sm:table-cell">
                               <span className={cn(
                                 "px-2.5 py-1 rounded-lg text-xs font-black uppercase",
                                 student.gender === 'L' ? "bg-blue-50 text-blue-600" : 
@@ -1817,18 +1869,18 @@ export default function App() {
                                 {student.gender || '-'}
                               </span>
                             </td>
-                            <td className="px-6 py-3">
+                            <td className="px-6 py-3 hidden md:table-cell">
                               <p className="text-xs font-bold text-gray-700">{student.class || '-'}</p>
                               <p className="text-[10px] text-gray-400 font-mono">{student.nisn || '-'}</p>
                             </td>
                             <td className="px-6 py-3">
                               <span className={cn(
-                                "px-3 py-1 rounded-full text-xs font-black uppercase flex items-center gap-1.5 w-fit",
+                                "px-2 md:px-3 py-1 rounded-full text-[10px] md:text-xs font-black uppercase flex items-center gap-1 md:gap-1.5 w-fit",
                                 student.isCalled 
                                   ? "bg-green-100 text-green-700" 
                                   : "bg-orange-100 text-orange-700"
                               )}>
-                                <div className={cn("w-1.5 h-1.5 rounded-full", student.isCalled ? "bg-green-600" : "bg-orange-600")} />
+                                <div className={cn("w-1 md:w-1.5 h-1 md:h-1.5 rounded-full", student.isCalled ? "bg-green-600" : "bg-orange-600")} />
                                 {student.isCalled ? 'Hadir' : 'Belum'}
                               </span>
                             </td>
@@ -1847,13 +1899,13 @@ export default function App() {
                                   }
                                 }}
                                 className={cn(
-                                  "px-4 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all active:scale-95",
+                                  "px-3 md:px-4 py-1.5 rounded-lg font-black text-[8px] md:text-[9px] uppercase tracking-wider transition-all active:scale-95",
                                   student.isCalled 
                                     ? "bg-gray-100 text-gray-500 hover:bg-gray-200" 
                                     : "bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-600/20"
                                 )}
                               >
-                                {student.isCalled ? 'Batalkan' : 'Hadir'}
+                                {student.isCalled ? 'Batal' : 'Hadir'}
                               </button>
                             </td>
                           </tr>
@@ -1866,8 +1918,8 @@ export default function App() {
             )}
 
             {activeTab === 'users' && (
-              <div className="p-10">
-                <div className="flex justify-between items-center mb-8">
+              <div className="p-6 md:p-10">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                   <h3 className="text-xl font-serif font-bold">Daftar User Terotorisasi</h3>
                   <button 
                     onClick={async () => {
@@ -1882,111 +1934,113 @@ export default function App() {
                         alert('Role tidak valid. Gunakan "admin" atau "staff".');
                       }
                     }}
-                    className="bg-[#2e7d32] text-white px-6 py-2 rounded-full font-medium hover:bg-[#1b5e20] transition-all flex items-center gap-2"
+                    className="w-full sm:w-auto bg-[#2e7d32] text-white px-6 py-2 rounded-full font-medium hover:bg-[#1b5e20] transition-all flex items-center justify-center gap-2"
                   >
                     <UserPlus className="w-4 h-4" />
                     Tambah User
                   </button>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-gray-50 border-bottom border-gray-100">
-                        <th className="px-6 py-4 text-xs font-mono text-gray-400 uppercase tracking-wider">Email</th>
-                        <th className="px-6 py-4 text-xs font-mono text-gray-400 uppercase tracking-wider">Role</th>
-                        <th className="px-6 py-4 text-xs font-mono text-gray-400 uppercase tracking-wider text-right">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {appUsers.map((u) => (
-                        <tr key={u.email} className="hover:bg-gray-50/50 transition-colors group">
-                          <td className="px-6 py-4">
-                            <p className="font-medium text-gray-900">{u.email}</p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={cn(
-                              "px-3 py-1 rounded-full text-xs font-medium",
-                              u.role === 'admin' ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
-                            )}>
-                              {u.role.toUpperCase()}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <button 
-                              onClick={async () => {
-                                if (confirm(`Hapus akses untuk ${u.email}?`)) {
-                                  const { error } = await supabase
-                                    .from('users')
-                                    .delete()
-                                    .eq('email', u.email);
-                                  if (error) console.error("Error deleting user:", error);
-                                }
-                              }}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
+                <div className="overflow-x-auto -mx-6 md:mx-0">
+                  <div className="inline-block min-w-full align-middle px-6 md:px-0">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50 border-bottom border-gray-100">
+                          <th className="px-6 py-4 text-xs font-mono text-gray-400 uppercase tracking-wider">Email</th>
+                          <th className="px-6 py-4 text-xs font-mono text-gray-400 uppercase tracking-wider">Role</th>
+                          <th className="px-6 py-4 text-xs font-mono text-gray-400 uppercase tracking-wider text-right">Aksi</th>
                         </tr>
-                      ))}
-                      {appUsers.length === 0 && (
-                        <tr>
-                          <td colSpan={3} className="px-6 py-10 text-center text-gray-400 italic">
-                            Belum ada user tambahan. Admin utama: ipg.gm2025@gmail.com
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {appUsers.map((u) => (
+                          <tr key={u.email} className="hover:bg-gray-50/50 transition-colors group">
+                            <td className="px-6 py-4">
+                              <p className="font-medium text-gray-900 text-sm md:text-base">{u.email}</p>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={cn(
+                                "px-3 py-1 rounded-full text-[10px] md:text-xs font-medium",
+                                u.role === 'admin' ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                              )}>
+                                {u.role.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <button 
+                                onClick={async () => {
+                                  if (confirm(`Hapus akses untuk ${u.email}?`)) {
+                                    const { error } = await supabase
+                                      .from('users')
+                                      .delete()
+                                      .eq('email', u.email);
+                                    if (error) console.error("Error deleting user:", error);
+                                  }
+                                }}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {appUsers.length === 0 && (
+                          <tr>
+                            <td colSpan={3} className="px-6 py-10 text-center text-gray-400 italic text-sm">
+                              Belum ada user tambahan. Admin utama: ipg.gm2025@gmail.com
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}
 
             {activeTab === 'settings' && (
-              <div className="p-10 max-w-2xl">
+              <div className="p-6 md:p-10 max-w-2xl mx-auto lg:mx-0">
                 <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="p-8 border-b border-gray-100">
+                  <div className="p-6 md:p-8 border-b border-gray-100">
                     <h3 className="text-xl font-serif font-bold">Identitas Sekolah</h3>
                     <p className="text-sm text-gray-500 mt-1">Informasi ini akan muncul di sidebar dan layar proyektor.</p>
                   </div>
-                  <div className="p-8 space-y-8">
+                  <div className="p-6 md:p-8 space-y-8">
                     <div className="space-y-2">
                       <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Nama Sekolah</label>
                       <input 
                         type="text" 
                         value={schoolName}
                         onChange={(e) => setSchoolName(e.target.value)}
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none text-sm md:text-base"
                         placeholder="Contoh: SMK NEGERI 1 KOTA"
                       />
                     </div>
                     <div className="space-y-4">
                       <label className="text-sm font-mono text-gray-500 uppercase tracking-wider block">Logo Sekolah (URL)</label>
-                      <div className="flex gap-4 items-start">
-                        <div className="w-24 h-24 bg-gray-50 rounded-2xl border border-dashed border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      <div className="flex flex-col sm:flex-row gap-4 items-start">
+                        <div className="w-24 h-24 bg-gray-50 rounded-2xl border border-dashed border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0 mx-auto sm:mx-0">
                           {schoolLogo ? (
                             <img src={schoolLogo} className="w-full h-full object-cover" alt="Preview" />
                           ) : (
                             <Camera className="w-8 h-8 text-gray-300" />
                           )}
                         </div>
-                        <div className="flex-1 space-y-2">
+                        <div className="flex-1 space-y-2 w-full">
                           <input 
                             type="text" 
                             value={schoolLogo}
                             onChange={(e) => setSchoolLogo(e.target.value)}
-                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none"
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none text-sm md:text-base"
                             placeholder="https://example.com/logo.png"
                           />
-                          <p className="text-xs text-gray-400">Gunakan URL gambar publik atau base64.</p>
+                          <p className="text-[10px] md:text-xs text-gray-400">Gunakan URL gambar publik atau base64.</p>
                         </div>
                       </div>
                     </div>
                   </div>
-                  <div className="p-8 bg-gray-50">
-                    <div className="flex items-center gap-3 text-sm text-[#2e7d32]">
-                      <CheckCircle className="w-4 h-4" />
+                  <div className="p-6 md:p-8 bg-gray-50">
+                    <div className="flex items-center gap-3 text-xs md:text-sm text-[#2e7d32]">
+                      <CheckCircle className="w-4 h-4 flex-shrink-0" />
                       <span>Pengaturan disimpan secara otomatis di perangkat ini.</span>
                     </div>
                   </div>
