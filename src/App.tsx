@@ -8,6 +8,7 @@ import {
   FileSpreadsheet, Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Toaster, toast } from 'sonner';
 import { 
   ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend 
 } from 'recharts';
@@ -202,8 +203,10 @@ export default function App() {
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [view, setView] = useState<'admin' | 'projector'>('admin');
   const [activeTab, setActiveTab] = useState<'list' | 'upload' | 'seating' | 'invitation' | 'registration' | 'users' | 'settings'>('list');
-  const [schoolName, setSchoolName] = useState(() => localStorage.getItem('schoolName') || 'SMK NEGERI 1 KOTA');
-  const [schoolLogo, setSchoolLogo] = useState(() => localStorage.getItem('schoolLogo') || '');
+  const [schoolName, setSchoolName] = useState('SMK NEGERI 1 KOTA');
+  const [schoolLogo, setSchoolLogo] = useState('');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [currentStudentIndex, setCurrentStudentIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -285,13 +288,13 @@ export default function App() {
 
     // Check file size (2MB limit)
     if (file.size > 2 * 1024 * 1024) {
-      alert('Ukuran file terlalu besar! Maksimal 2MB.');
+      toast.error('Ukuran file terlalu besar! Maksimal 2MB.');
       return;
     }
 
     // Check file type
     if (!file.type.startsWith('image/')) {
-      alert('File harus berupa gambar (JPG, PNG, dll).');
+      toast.error('File harus berupa gambar (JPG, PNG, dll).');
       return;
     }
 
@@ -328,11 +331,67 @@ export default function App() {
       }
 
       setEditingStudent({ ...editingStudent, photoUrl: data.publicUrl });
+      toast.success('Foto berhasil diunggah!');
     } catch (error: any) {
       console.error('Error uploading photo:', error);
-      alert('Gagal mengunggah foto: ' + (error.message || 'Terjadi kesalahan teknis.'));
+      toast.error('Gagal mengunggah foto: ' + (error.message || 'Terjadi kesalahan teknis.'));
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (2MB limit)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Ukuran logo sekolah terlalu besar! Maksimal 2MB.');
+      return;
+    }
+
+    // Check file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('File harus berupa gambar (JPG, PNG, dll).');
+      return;
+    }
+
+    setIsUploadingLogo(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `school-logo-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `school-assets/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('Supabase Storage Error:', uploadError);
+        if (uploadError.message.includes('bucket not found')) {
+          throw new Error('Bucket "photos" tidak ditemukan di Supabase. Silakan buat bucket bernama "photos" di dashboard Supabase Anda.');
+        }
+        throw uploadError;
+      }
+
+      const { data } = supabase.storage
+        .from('photos')
+        .getPublicUrl(filePath);
+
+      if (!data || !data.publicUrl) {
+        throw new Error('Gagal mendapatkan URL publik untuk logo.');
+      }
+
+      setSchoolLogo(data.publicUrl);
+      toast.success('Logo sekolah berhasil diunggah!');
+    } catch (error: any) {
+      console.error('Error uploading logo:', error);
+      toast.error('Gagal mengunggah logo: ' + (error.message || 'Terjadi kesalahan teknis.'));
+    } finally {
+      setIsUploadingLogo(false);
     }
   };
 
@@ -348,11 +407,53 @@ export default function App() {
     }
   };
 
+  const fetchSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('school_settings')
+        .select('*')
+        .single();
+      
+      if (data) {
+        setSchoolName(data.name || 'SMK NEGERI 1 KOTA');
+        setSchoolLogo(data.logo_url || '');
+      } else if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+        console.warn("Settings fetch error:", error);
+      }
+    } catch (err) {
+      console.error("Failed to fetch settings:", err);
+    }
+  };
+
+  const saveSettingsToDb = async () => {
+    setIsSavingSettings(true);
+    try {
+      // We assume there's only one row with id 1 for school settings
+      const { error } = await supabase
+        .from('school_settings')
+        .upsert({ 
+          id: 1, 
+          name: schoolName, 
+          logo_url: schoolLogo,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      toast.success('Pengaturan sekolah berhasil disimpan ke database!');
+    } catch (err: any) {
+      console.error("Save settings error:", err);
+      toast.error('Gagal menyimpan ke database: ' + (err.message || 'Pastikan tabel "school_settings" sudah dibuat di Supabase.'));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
   useEffect(() => {
     if (!user || !isAuthReady) return;
 
     fetchStudents();
     fetchUsers();
+    fetchSettings();
 
     // Real-time subscription for students
     const studentChannel = supabase
@@ -370,9 +471,18 @@ export default function App() {
       })
       .subscribe();
 
+    // Real-time subscription for settings
+    const settingsChannel = supabase
+      .channel('settings_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'school_settings' }, () => {
+        fetchSettings();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(studentChannel);
       supabase.removeChannel(userChannel);
+      supabase.removeChannel(settingsChannel);
     };
   }, [user, isAuthReady]);
 
@@ -629,19 +739,31 @@ export default function App() {
         </div>
 
         {/* School Identity on Projector (Kop) */}
-        <div className="absolute top-10 left-0 right-0 flex flex-col items-center gap-2 text-center z-10">
-          <div className="w-20 h-20 flex items-center justify-center overflow-hidden">
+        <div className="absolute top-10 sm:top-16 left-0 right-0 flex flex-col items-center gap-4 sm:gap-6 text-center z-10 px-6">
+          <motion.div 
+            initial={{ y: -30, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            className="w-20 h-20 sm:w-32 sm:h-32 flex items-center justify-center overflow-hidden drop-shadow-[0_0_25px_rgba(34,197,94,0.3)] bg-white/5 p-2 rounded-2xl backdrop-blur-sm border border-white/10"
+          >
             {schoolLogo ? (
               <img src={schoolLogo} className="w-full h-full object-contain" alt="Logo" />
             ) : (
-              <Users className="w-10 h-10 text-white/50" />
+              <Users className="w-16 h-16 text-white/30" />
             )}
-          </div>
-          <div>
-            <h3 className="text-4xl font-serif font-bold tracking-wide leading-tight">{schoolName}</h3>
-            <p className="text-sm font-mono text-white/40 uppercase tracking-[0.4em]">Acara Wisuda & Pelepasan</p>
-          </div>
-          <div className="w-1/2 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent mt-2"></div>
+          </motion.div>
+          <motion.div
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.3, duration: 1 }}
+          >
+            <h3 className="text-3xl sm:text-5xl lg:text-6xl font-serif font-bold tracking-[0.1em] leading-tight text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]">{schoolName}</h3>
+            <div className="flex items-center justify-center gap-4 mt-2 sm:mt-4">
+              <div className="h-px w-8 sm:w-16 bg-gradient-to-r from-transparent to-white/40"></div>
+              <p className="text-xs sm:text-sm lg:text-base font-mono text-[#A5D6A7] uppercase tracking-[0.5em] font-bold">Acara Wisuda & Pelepasan</p>
+              <div className="h-px w-8 sm:w-16 bg-gradient-to-l from-transparent to-white/40"></div>
+            </div>
+          </motion.div>
         </div>
 
         <div className="absolute top-4 right-4 flex gap-4 no-print">
@@ -657,106 +779,105 @@ export default function App() {
           {currentStudent ? (
             <motion.div 
               key={currentStudent.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.1 }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-              className="w-full h-full flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-12 p-6 lg:p-12 pt-32 lg:pt-48 overflow-y-auto lg:overflow-hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5 }}
+              className="w-full h-full flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-24 p-8 lg:p-20 pt-[22vh] lg:pt-[25vh] pb-48 overflow-y-auto lg:overflow-hidden"
             >
               {/* Photo Section */}
-              <div className="w-full lg:w-1/2 flex justify-center">
+              <div className="w-full lg:w-[45%] flex justify-center lg:justify-end">
                 <motion.div 
-                  initial={{ opacity: 0, x: -100, rotateY: -20 }}
-                  animate={{ opacity: 1, x: 0, rotateY: 0 }}
-                  transition={{ duration: 1, ease: "easeOut" }}
-                  className="relative group w-full max-w-[320px] sm:max-w-[420px]"
+                  initial={{ opacity: 0, x: -150, rotateY: -30, scale: 0.8 }}
+                  animate={{ opacity: 1, x: 0, rotateY: 0, scale: 1 }}
+                  transition={{ 
+                    duration: 1.2, 
+                    ease: [0.16, 1, 0.3, 1], // custom cubic-bezier for smooth entrance
+                  }}
+                  className="relative group w-full max-w-[320px] sm:max-w-[450px] lg:max-w-[520px]"
                 >
-                  <div className="absolute -inset-4 sm:-inset-8 bg-gradient-to-tr from-green-500/40 via-yellow-500/20 to-green-500/40 rounded-[40px] blur-3xl opacity-60 animate-pulse"></div>
+                  {/* Animated glow effect */}
+                  <div className="absolute -inset-8 bg-gradient-to-tr from-green-500/40 via-yellow-400/20 to-green-500/40 rounded-[40px] blur-3xl opacity-60 animate-pulse"></div>
+                  
                   <motion.div 
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ 
-                      scale: 1, 
-                      opacity: 1,
-                      y: [0, -10, 0]
-                    }}
-                    transition={{ 
-                      opacity: { duration: 0.5 },
-                      scale: { duration: 0.5 },
-                      y: { duration: 4, repeat: Infinity, ease: "easeInOut" }
-                    }}
-                    className="relative w-full aspect-[4/5] bg-gray-800 rounded-[32px] overflow-hidden border-4 sm:border-8 border-white shadow-[0_0_30px_rgba(34,197,94,0.3)] sm:shadow-[0_0_50px_rgba(34,197,94,0.3)]"
+                    whileHover={{ scale: 1.02, rotateY: 5 }}
+                    className="relative w-full aspect-[3/4] bg-gray-800 rounded-[32px] overflow-hidden border-8 border-white shadow-[0_0_50px_rgba(34,197,94,0.5)]"
                   >
                     {currentStudent.photoUrl ? (
-                      <img src={currentStudent.photoUrl} className="w-full h-full object-cover" alt={currentStudent.name} referrerPolicy="no-referrer" />
+                      <motion.img 
+                        initial={{ scale: 1.2 }}
+                        animate={{ scale: 1 }}
+                        transition={{ duration: 1.5 }}
+                        src={currentStudent.photoUrl} 
+                        className="w-full h-full object-cover" 
+                        alt={currentStudent.name} 
+                        referrerPolicy="no-referrer" 
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                        <Users className="w-24 sm:w-32 h-24 sm:h-32 text-gray-700" />
+                        <Users className="w-32 sm:w-48 h-32 sm:h-48 text-gray-700" />
                       </div>
                     )}
+                    
+                    {/* Overlay gradient for depth */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none"></div>
                   </motion.div>
                 </motion.div>
               </div>
 
               {/* Info Section */}
-              <div className="w-full lg:w-1/2 text-center lg:text-left space-y-6 lg:space-y-8">
-                <motion.div
-                  initial={{ x: 100, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: 0.4, duration: 0.8 }}
-                >
-                  <h2 className="text-sm sm:text-xl font-mono text-[#81C784] uppercase tracking-[0.3em] sm:tracking-[0.5em] mb-2 sm:mb-4">Wisudawan</h2>
-                  <h1 className="text-4xl sm:text-6xl lg:text-8xl font-serif font-bold leading-tight mb-4 sm:mb-6 bg-gradient-to-r from-white via-green-100 to-white bg-clip-text text-transparent bg-[length:200%_auto] animate-shimmer">
-                    {currentStudent.name}
-                  </h1>
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: 128 }}
-                    transition={{ delay: 1, duration: 1 }}
-                    className="h-1.5 bg-gradient-to-r from-[#81C784] to-yellow-400 mx-auto lg:mx-0"
-                  />
-                </motion.div>
+              <div className="w-full lg:w-[55%] text-center lg:text-left">
+                <div className="max-w-3xl space-y-8 lg:space-y-12">
+                  <motion.div
+                    initial={{ y: 50, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.3, duration: 0.8 }}
+                  >
+                    <h2 className="text-sm sm:text-2xl font-mono text-[#A5D6A7] uppercase tracking-[0.5em] mb-4 font-bold drop-shadow-md">Wisudawan</h2>
+                    <h1 className="text-4xl sm:text-7xl lg:text-8xl font-serif font-bold leading-[1.1] mb-6 bg-gradient-to-r from-white via-green-50 to-white bg-clip-text text-transparent bg-[length:200%_auto] animate-shimmer drop-shadow-2xl tracking-tight">
+                      {currentStudent.name}
+                    </h1>
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: 200 }}
+                      transition={{ delay: 1, duration: 1.2 }}
+                      className="h-2 bg-gradient-to-r from-[#81C784] to-yellow-400 mx-auto lg:mx-0 rounded-full shadow-[0_0_20px_rgba(129,199,132,0.6)]"
+                    />
+                  </motion.div>
 
-                <motion.div 
-                  initial={{ x: 50, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: 0.5 }}
-                  className="grid grid-cols-2 gap-4 sm:gap-8"
-                >
-                  <div>
-                    <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Jurusan</p>
-                    <p className="text-lg sm:text-2xl font-medium">{currentStudent.major}</p>
-                  </div>
-                  {currentStudent.class && (
-                    <div>
-                      <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Kelas</p>
-                      <p className="text-lg sm:text-2xl font-medium">{currentStudent.class}</p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Rata-rata Nilai</p>
-                    <p className="text-lg sm:text-2xl font-medium">{currentStudent.grade || '-'}</p>
-                  </div>
-                  {currentStudent.predicate && (
-                    <div className="col-span-2">
-                      <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Predikat</p>
-                      <p className="text-xl sm:text-3xl font-serif italic text-[#81C784]">{currentStudent.predicate}</p>
-                    </div>
-                  )}
-                  {currentStudent.achievement && (
-                    <div className="col-span-2">
-                      <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Prestasi</p>
-                      <p className="text-base sm:text-xl text-gray-300">{currentStudent.achievement}</p>
-                    </div>
-                  )}
-                  <div className="col-span-2">
-                    <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Orang Tua</p>
-                    <p className="text-lg sm:text-2xl font-medium">{currentStudent.parentName || '-'}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-[10px] sm:text-sm font-mono text-gray-400 uppercase tracking-wider mb-1">Alamat</p>
-                    <p className="text-sm sm:text-lg text-gray-300">{currentStudent.address || '-'}</p>
-                  </div>
-                </motion.div>
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.6, duration: 0.5 }}
+                    className="grid grid-cols-2 gap-8 lg:gap-12"
+                  >
+                    {[
+                      { label: 'Jurusan', value: currentStudent.major },
+                      { label: 'Kelas', value: currentStudent.class },
+                      { label: 'Nilai', value: currentStudent.grade || '-' },
+                      { label: 'Predikat', value: currentStudent.predicate || '-', isItalic: true },
+                      { label: 'Orang Tua', value: currentStudent.parentName || '-', fullWidth: true },
+                      { label: 'Alamat', value: currentStudent.address || '-', fullWidth: true, isSmall: true }
+                    ].map((item, index) => (
+                      <motion.div 
+                        key={item.label}
+                        initial={{ y: 20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ delay: 0.7 + (index * 0.1) }}
+                        className={`${item.fullWidth ? 'col-span-2' : ''}`}
+                      >
+                        <p className="text-[10px] sm:text-base font-mono text-white/50 uppercase tracking-widest mb-2 font-bold">{item.label}</p>
+                        <p className={`
+                          ${item.isSmall ? 'text-base sm:text-2xl text-white/80' : 'text-xl sm:text-4xl font-medium text-white'}
+                          ${item.isItalic ? 'font-serif italic text-[#A5D6A7]' : ''}
+                          drop-shadow-lg leading-tight
+                        `}>
+                          {item.value}
+                        </p>
+                      </motion.div>
+                    ))}
+                  </motion.div>
+                </div>
               </div>
             </motion.div>
           ) : (
@@ -768,24 +889,39 @@ export default function App() {
         </AnimatePresence>
 
         {/* Controls */}
-        <div className="absolute bottom-12 flex gap-8">
-          <button 
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-8 no-print z-20 bg-black/30 backdrop-blur-md px-6 py-3 rounded-full border border-white/10 shadow-2xl">
+          <motion.button 
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             onClick={() => setCurrentStudentIndex(prev => Math.max(0, prev - 1))}
-            className="p-4 bg-white/5 rounded-full hover:bg-white/10 transition-all active:scale-90"
+            className="p-3 sm:p-4 bg-white/10 rounded-full hover:bg-white/20 transition-all border border-white/10"
           >
-            <ChevronLeft className="w-8 h-8" />
-          </button>
-          <div className="flex items-center gap-2 font-mono text-gray-500">
-            <span className="text-white">{currentStudentIndex + 1}</span>
-            <span>/</span>
-            <span>{students.length}</span>
+            <ChevronLeft className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+          </motion.button>
+          
+          <div className="flex flex-col items-center gap-1">
+            <div className="flex items-center gap-3 font-mono text-sm sm:text-lg">
+              <span className="text-white font-bold">{currentStudentIndex + 1}</span>
+              <span className="text-white/30">/</span>
+              <span className="text-white/50">{students.length}</span>
+            </div>
+            <div className="w-20 sm:w-28 h-1 bg-white/10 rounded-full overflow-hidden">
+              <motion.div 
+                className="h-full bg-green-500"
+                initial={{ width: 0 }}
+                animate={{ width: `${((currentStudentIndex + 1) / students.length) * 100}%` }}
+              />
+            </div>
           </div>
-          <button 
+
+          <motion.button 
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             onClick={() => setCurrentStudentIndex(prev => Math.min(students.length - 1, prev + 1))}
-            className="p-4 bg-white/5 rounded-full hover:bg-white/10 transition-all active:scale-90"
+            className="p-3 sm:p-4 bg-white/10 rounded-full hover:bg-white/20 transition-all border border-white/10"
           >
-            <ChevronRight className="w-8 h-8" />
-          </button>
+            <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+          </motion.button>
         </div>
       </div>
     );
@@ -794,6 +930,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-[#F5F5F0] flex relative">
+        <Toaster position="top-center" richColors />
         {/* Mobile Header */}
         <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#1a1a1a] text-white flex items-center justify-between px-6 z-30 border-b border-white/5 shadow-lg">
           <div className="flex items-center gap-3">
@@ -1243,33 +1380,56 @@ export default function App() {
                     <span className="text-white font-black uppercase tracking-[0.5em] text-xs relative z-10">Panggung Utama</span>
                   </div>
 
-                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
                     {students.sort((a, b) => (a.seatNumber || 0) - (b.seatNumber || 0)).map((student) => (
                       <motion.div 
                         key={student.id}
                         whileHover={{ scale: 1.05, translateY: -2 }}
                         className={cn(
-                          "aspect-square rounded-xl border flex flex-col items-center justify-center p-1 text-center transition-all cursor-help group relative",
+                          "rounded-2xl border flex flex-col items-center justify-center p-4 text-center transition-all cursor-help group relative min-h-[120px]",
                           student.isCalled 
-                            ? "bg-green-500 border-green-400 text-white shadow-lg shadow-green-500/20" 
-                            : "bg-white border-gray-100 shadow-sm hover:border-green-200"
+                            ? "bg-[#2e7d32] border-[#2e7d32] text-white shadow-lg shadow-green-900/20" 
+                            : "bg-white border-gray-100 shadow-sm hover:border-[#2e7d32]/30 hover:shadow-md"
                         )}
                       >
-                        <span className={cn(
-                          "text-sm font-black mb-0.5",
-                          student.isCalled ? "text-white/70" : "text-gray-400"
-                        )}>
-                          {student.seatNumber || '-'}
-                        </span>
                         <div className={cn(
-                          "w-1.5 h-1.5 rounded-full mb-1",
-                          student.isCalled ? "bg-white animate-pulse" : "bg-gray-200"
-                        )} />
+                          "text-[10px] font-mono font-bold mb-2 px-2 py-0.5 rounded-full",
+                          student.isCalled ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
+                        )}>
+                          No. {student.seatNumber || '-'}
+                        </div>
+
+                        <div className="flex-1 flex flex-col justify-center gap-1">
+                          <p className={cn(
+                            "text-xs font-bold leading-tight line-clamp-2",
+                            student.isCalled ? "text-white" : "text-gray-900"
+                          )}>
+                            {student.name.split(' ').slice(0, 2).join(' ')}
+                          </p>
+                          <p className={cn(
+                            "text-[10px] font-medium leading-tight truncate w-full",
+                            student.isCalled ? "text-white/70" : "text-gray-500"
+                          )}>
+                            {(() => {
+                              const m = student.major.toLowerCase();
+                              if (m.includes('multimedia')) return 'MM';
+                              if (m.includes('kendaraan ringan')) return 'TKR';
+                              if (m.includes('komputer dan jaringan')) return 'TKJ';
+                              if (m.includes('bisnis sepeda motor')) return 'TBSM';
+                              if (m.includes('akuntansi')) return 'AKL';
+                              if (m.includes('perkantoran')) return 'OTKP';
+                              if (m.includes('tata boga')) return 'TB';
+                              if (m.includes('tata busana')) return 'TBS';
+                              return student.major;
+                            })()}
+                          </p>
+                        </div>
                         
                         {/* Tooltip */}
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-4 bg-gray-900 text-white rounded-xl text-sm opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
-                          <p className="font-bold truncate">{student.name}</p>
-                          <p className="text-gray-400 truncate text-xs">{student.major}</p>
+                          <p className="font-bold">{student.name}</p>
+                          <p className="text-gray-400 text-xs">{student.major}</p>
+                          <p className="text-gray-400 text-[10px] mt-1">{student.class}</p>
                           <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-gray-900" />
                         </div>
                       </motion.div>
@@ -2016,34 +2176,78 @@ export default function App() {
                       />
                     </div>
                     <div className="space-y-4">
-                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider block">Logo Sekolah (URL)</label>
-                      <div className="flex flex-col sm:flex-row gap-4 items-start">
-                        <div className="w-24 h-24 bg-gray-50 rounded-2xl border border-dashed border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0 mx-auto sm:mx-0">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider block">Logo Sekolah</label>
+                      <div className="flex flex-col sm:flex-row gap-6 items-center sm:items-start">
+                        <div className="w-32 h-32 bg-gray-50 rounded-[32px] border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0 relative group">
                           {schoolLogo ? (
-                            <img src={schoolLogo} className="w-full h-full object-cover" alt="Preview" />
+                            <img src={schoolLogo} className="w-full h-full object-contain p-2" alt="Preview" />
                           ) : (
-                            <Camera className="w-8 h-8 text-gray-300" />
+                            <Camera className="w-10 h-10 text-gray-300" />
+                          )}
+                          {isUploadingLogo && (
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            </div>
                           )}
                         </div>
-                        <div className="flex-1 space-y-2 w-full">
-                          <input 
-                            type="text" 
-                            value={schoolLogo}
-                            onChange={(e) => setSchoolLogo(e.target.value)}
-                            className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none text-sm md:text-base"
-                            placeholder="https://example.com/logo.png"
-                          />
-                          <p className="text-[10px] md:text-xs text-gray-400">Gunakan URL gambar publik atau base64.</p>
+                        <div className="flex-1 space-y-4 w-full">
+                          <div className="flex flex-col gap-3">
+                            <input 
+                              type="file" 
+                              id="logo-upload"
+                              accept="image/*"
+                              onChange={handleLogoUpload}
+                              className="hidden"
+                            />
+                            <label 
+                              htmlFor="logo-upload"
+                              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white border border-gray-200 hover:border-[#2e7d32] hover:text-[#2e7d32] text-gray-700 rounded-xl cursor-pointer transition-all text-sm font-medium shadow-sm"
+                            >
+                              <Upload className="w-4 h-4" />
+                              {schoolLogo ? 'Ganti Logo Sekolah' : 'Unggah Logo Sekolah'}
+                            </label>
+                            
+                            <div className="relative">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <span className="text-gray-400 text-xs">URL:</span>
+                              </div>
+                              <input 
+                                type="text" 
+                                value={schoolLogo}
+                                onChange={(e) => setSchoolLogo(e.target.value)}
+                                className="w-full pl-12 pr-4 py-2 rounded-lg border border-gray-100 bg-gray-50 text-[10px] text-gray-400 focus:ring-1 focus:ring-[#2e7d32] outline-none"
+                                placeholder="Atau masukkan URL logo di sini..."
+                              />
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-400">Format: JPG, PNG, SVG. Maksimal 2MB. Logo akan muncul di sidebar dan layar proyektor.</p>
                         </div>
                       </div>
                     </div>
                   </div>
-                  <div className="p-6 md:p-8 bg-gray-50">
-                    <div className="flex items-center gap-3 text-xs md:text-sm text-[#2e7d32]">
-                      <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                      <span>Pengaturan disimpan secara otomatis di perangkat ini.</span>
+                    <div className="p-6 md:p-8 bg-gray-50 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 text-xs md:text-sm text-[#2e7d32]">
+                        <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                        <span>Pengaturan akan disimpan secara permanen di database.</span>
+                      </div>
+                      <button
+                        onClick={saveSettingsToDb}
+                        disabled={isSavingSettings}
+                        className="w-full sm:w-auto px-6 py-3 bg-[#2e7d32] text-white rounded-xl font-medium hover:bg-[#1b5e20] transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-green-900/10"
+                      >
+                        {isSavingSettings ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            Menyimpan...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-4 h-4" />
+                            Simpan ke Database
+                          </>
+                        )}
+                      </button>
                     </div>
-                  </div>
                 </div>
               </div>
             )}
