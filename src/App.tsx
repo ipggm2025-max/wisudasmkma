@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from './lib/supabase';
 import { 
   Users, Upload, Monitor, Settings, LogOut, ChevronRight, ChevronLeft, 
-  Printer, QrCode,
+  Printer, QrCode, GraduationCap, MapPin,
   Maximize2, Minimize2, Trash2, Edit2, CheckCircle, UserPlus, Search,
   Grid, List as ListIcon, Camera, PieChart as PieChartIcon, BarChart as BarChartIcon, TrendingUp,
   FileSpreadsheet, Download
@@ -45,6 +45,7 @@ interface AppUser {
   email: string;
   role: 'admin' | 'staff';
   displayName?: string;
+  password?: string;
 }
 
 // --- Components ---
@@ -202,9 +203,12 @@ export default function App() {
   const [students, setStudents] = useState<Student[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [view, setView] = useState<'admin' | 'projector'>('admin');
-  const [activeTab, setActiveTab] = useState<'list' | 'upload' | 'seating' | 'invitation' | 'registration' | 'users' | 'settings'>('list');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'list' | 'upload' | 'seating' | 'invitation' | 'registration' | 'users' | 'settings'>('dashboard');
   const [schoolName, setSchoolName] = useState('SMK NEGERI 1 KOTA');
   const [schoolLogo, setSchoolLogo] = useState('');
+  const [eventDay, setEventDay] = useState('Senin');
+  const [eventDate, setEventDate] = useState('15 Juni 2026');
+  const [invitationMessage, setInvitationMessage] = useState('Mengharap Kehadiran Anda Pada Acara Wisuda & Pelepasan Siswa-Siswi Kami.');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [currentStudentIndex, setCurrentStudentIndex] = useState(0);
@@ -220,6 +224,9 @@ export default function App() {
   const [isUploadingData, setIsUploadingData] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [deletingStudentId, setDeletingStudentId] = useState<string | null>(null);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<Partial<AppUser>>({ email: '', role: 'staff', password: '' });
+  const [isSavingUser, setIsSavingUser] = useState(false);
 
   const fetchUserRole = async (email: string) => {
     // Hardcoded super admin
@@ -237,7 +244,9 @@ export default function App() {
     if (data) {
       setUserRole(data.role);
     } else {
-      setUserRole('staff'); // Default role for new users
+      // If user is not in the table, they are just a regular user (staff)
+      // but we can also set to null if we want to block access
+      setUserRole('staff'); 
     }
   };
 
@@ -268,6 +277,31 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('schoolLogo', schoolLogo);
   }, [schoolLogo]);
+
+  const stats = useMemo(() => {
+    const total = students.length;
+    const registered = students.filter(s => s.isCalled).length;
+    const unregistered = total - registered;
+    
+    const majorMap: Record<string, number> = {};
+    students.forEach(s => {
+      if (s.major) majorMap[s.major] = (majorMap[s.major] || 0) + 1;
+    });
+    const majorData = Object.entries(majorMap)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+
+    const genderMap: Record<string, number> = { 'L': 0, 'P': 0 };
+    students.forEach(s => {
+      if (s.gender === 'L' || s.gender === 'P') genderMap[s.gender]++;
+    });
+    const genderData = [
+      { name: 'Laki-laki', value: genderMap['L'] },
+      { name: 'Perempuan', value: genderMap['P'] }
+    ].filter(d => d.value > 0);
+
+    return { total, registered, unregistered, majorData, genderData };
+  }, [students]);
 
   const fetchStudents = async () => {
     const { data, error } = await supabase
@@ -407,6 +441,63 @@ export default function App() {
     }
   };
 
+  const saveUserToDb = async () => {
+    if (!editingUser?.email || !editingUser?.role) {
+      toast.error('Email dan Role harus diisi');
+      return;
+    }
+    
+    setIsSavingUser(true);
+    try {
+      // Use backend API to handle user creation and role assignment
+      const response = await fetch('/api/users/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: editingUser.email,
+          role: editingUser.role,
+          password: editingUser.password
+        })
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Gagal menyimpan user');
+      }
+
+      toast.success('User berhasil disimpan');
+      setIsUserModalOpen(false);
+      fetchUsers();
+    } catch (err: any) {
+      console.error("Save user error:", err);
+      toast.error('Gagal menyimpan user: ' + err.message);
+    } finally {
+      setIsSavingUser(false);
+    }
+  };
+
+  const deleteUserFromDb = async (email: string) => {
+    if (email === 'ipg.gm2025@gmail.com') {
+      toast.error('Admin utama tidak dapat dihapus');
+      return;
+    }
+    if (!confirm(`Hapus akses untuk ${email}?`)) return;
+    
+    try {
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('email', email);
+      if (error) throw error;
+      toast.success('User berhasil dihapus');
+      fetchUsers();
+    } catch (err: any) {
+      console.error("Delete user error:", err);
+      toast.error('Gagal menghapus user: ' + err.message);
+    }
+  };
+
   const fetchSettings = async () => {
     try {
       const { data, error } = await supabase
@@ -417,6 +508,9 @@ export default function App() {
       if (data) {
         setSchoolName(data.name || 'SMK NEGERI 1 KOTA');
         setSchoolLogo(data.logo_url || '');
+        setEventDay(data.event_day || 'Senin');
+        setEventDate(data.event_date || '15 Juni 2026');
+        setInvitationMessage(data.invitation_message || 'Mengharap Kehadiran Anda Pada Acara Wisuda & Pelepasan Siswa-Siswi Kami.');
       } else if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
         console.warn("Settings fetch error:", error);
       }
@@ -435,6 +529,9 @@ export default function App() {
           id: 1, 
           name: schoolName, 
           logo_url: schoolLogo,
+          event_day: eventDay,
+          event_date: eventDate,
+          invitation_message: invitationMessage,
           updated_at: new Date().toISOString()
         });
 
@@ -520,8 +617,12 @@ export default function App() {
 
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
-      const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          s.major.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = s.name.toLowerCase().includes(query) ||
+                          s.major.toLowerCase().includes(query) ||
+                          (s.class && s.class.toLowerCase().includes(query)) ||
+                          (s.parentName && s.parentName.toLowerCase().includes(query)) ||
+                          (s.address && s.address.toLowerCase().includes(query)) ||
                           (s.nisn && s.nisn.includes(searchQuery));
       
       if (activeTab === 'registration') {
@@ -663,6 +764,7 @@ export default function App() {
       {
         name: 'Budi Santoso',
         nisn: '1234567890',
+        gender: 'L',
         class: '12 MM 1',
         major: 'Multimedia',
         grade: 85.5,
@@ -689,7 +791,7 @@ export default function App() {
     const currentStudent = students[currentStudentIndex];
     
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-[#0a2e0a] via-[#1b5e20] to-[#0a2e0a] text-white z-50 flex flex-col items-center justify-center overflow-hidden">
+      <div className="fixed inset-0 bg-gradient-to-br from-[#0a2e0a] via-[#1b5e20] to-[#0a2e0a] text-white z-50 flex flex-col overflow-hidden">
         {/* Decorative background elements */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <motion.div 
@@ -738,18 +840,18 @@ export default function App() {
           ))}
         </div>
 
-        {/* School Identity on Projector (Kop) */}
-        <div className="absolute top-10 sm:top-16 left-0 right-0 flex flex-col items-center gap-4 sm:gap-6 text-center z-10 px-6">
+        {/* School Identity Section (Header) */}
+        <div className="relative z-10 pt-8 sm:pt-12 pb-4 flex flex-col items-center gap-2 sm:gap-4 text-center px-6 shrink-0">
           <motion.div 
             initial={{ y: -30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 1, ease: "easeOut" }}
-            className="w-20 h-20 sm:w-32 sm:h-32 flex items-center justify-center overflow-hidden drop-shadow-[0_0_25px_rgba(34,197,94,0.3)] bg-white/5 p-2 rounded-2xl backdrop-blur-sm border border-white/10"
+            className="w-14 h-14 sm:w-20 sm:h-20 flex items-center justify-center overflow-hidden drop-shadow-[0_0_20px_rgba(34,197,94,0.3)] bg-white/5 p-1.5 rounded-xl backdrop-blur-sm border border-white/10"
           >
             {schoolLogo ? (
               <img src={schoolLogo} className="w-full h-full object-contain" alt="Logo" />
             ) : (
-              <Users className="w-16 h-16 text-white/30" />
+              <Users className="w-10 h-10 text-white/30" />
             )}
           </motion.div>
           <motion.div
@@ -757,171 +859,178 @@ export default function App() {
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.3, duration: 1 }}
           >
-            <h3 className="text-3xl sm:text-5xl lg:text-6xl font-serif font-bold tracking-[0.1em] leading-tight text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]">{schoolName}</h3>
-            <div className="flex items-center justify-center gap-4 mt-2 sm:mt-4">
-              <div className="h-px w-8 sm:w-16 bg-gradient-to-r from-transparent to-white/40"></div>
-              <p className="text-xs sm:text-sm lg:text-base font-mono text-[#A5D6A7] uppercase tracking-[0.5em] font-bold">Acara Wisuda & Pelepasan</p>
-              <div className="h-px w-8 sm:w-16 bg-gradient-to-l from-transparent to-white/40"></div>
+            <h3 className="text-lg sm:text-2xl lg:text-3xl font-serif font-bold tracking-[0.05em] leading-tight text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-4xl">{schoolName}</h3>
+            <div className="flex items-center justify-center gap-3 mt-1 sm:mt-2">
+              <div className="h-px w-6 sm:w-12 bg-gradient-to-r from-transparent to-white/40"></div>
+              <p className="text-[10px] sm:text-xs lg:text-sm font-mono text-[#A5D6A7] uppercase tracking-[0.3em] font-bold">Acara Wisuda & Pelepasan</p>
+              <div className="h-px w-6 sm:w-12 bg-gradient-to-l from-transparent to-white/40"></div>
             </div>
           </motion.div>
         </div>
 
-        <div className="absolute top-4 right-4 flex gap-4 no-print">
+        <div className="absolute top-4 right-4 flex gap-4 no-print z-30">
           <button onClick={() => setView('admin')} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
-            <Settings className="w-6 h-6" />
+            <Settings className="w-5 h-5" />
           </button>
           <button onClick={toggleFullscreen} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
-            {isFullscreen ? <Minimize2 className="w-6 h-6" /> : <Maximize2 className="w-6 h-6" />}
+            {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
           </button>
         </div>
 
-        <AnimatePresence mode="wait">
-          {currentStudent ? (
-            <motion.div 
-              key={currentStudent.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.5 }}
-              className="w-full h-full flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-24 p-8 lg:p-20 pt-[22vh] lg:pt-[25vh] pb-48 overflow-y-auto lg:overflow-hidden"
-            >
-              {/* Photo Section */}
-              <div className="w-full lg:w-[45%] flex justify-center lg:justify-end">
-                <motion.div 
-                  initial={{ opacity: 0, x: -150, rotateY: -30, scale: 0.8 }}
-                  animate={{ opacity: 1, x: 0, rotateY: 0, scale: 1 }}
-                  transition={{ 
-                    duration: 1.2, 
-                    ease: [0.16, 1, 0.3, 1], // custom cubic-bezier for smooth entrance
-                  }}
-                  className="relative group w-full max-w-[320px] sm:max-w-[450px] lg:max-w-[520px]"
-                >
-                  {/* Animated glow effect */}
-                  <div className="absolute -inset-8 bg-gradient-to-tr from-green-500/40 via-yellow-400/20 to-green-500/40 rounded-[40px] blur-3xl opacity-60 animate-pulse"></div>
-                  
+        <div className="flex-1 relative overflow-hidden">
+          <AnimatePresence mode="wait">
+            {currentStudent ? (
+              <motion.div 
+                key={currentStudent.id}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.5 }}
+                className="absolute inset-0 flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-20 p-6 lg:p-12 overflow-y-auto lg:overflow-hidden"
+              >
+                {/* Photo Section */}
+                <div className="w-full lg:w-[40%] flex justify-center lg:justify-end shrink-0">
                   <motion.div 
-                    whileHover={{ scale: 1.02, rotateY: 5 }}
-                    className="relative w-full aspect-[3/4] bg-gray-800 rounded-[32px] overflow-hidden border-8 border-white shadow-[0_0_50px_rgba(34,197,94,0.5)]"
+                    initial={{ opacity: 0, x: -100, rotateY: -20, scale: 0.9 }}
+                    animate={{ opacity: 1, x: 0, rotateY: 0, scale: 1 }}
+                    transition={{ 
+                      duration: 1, 
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
+                    className="relative group w-full max-w-[280px] sm:max-w-[380px] lg:max-w-[450px]"
                   >
-                    {currentStudent.photoUrl ? (
-                      <motion.img 
-                        initial={{ scale: 1.2 }}
-                        animate={{ scale: 1 }}
-                        transition={{ duration: 1.5 }}
-                        src={currentStudent.photoUrl} 
-                        className="w-full h-full object-cover" 
-                        alt={currentStudent.name} 
-                        referrerPolicy="no-referrer" 
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                        <Users className="w-32 sm:w-48 h-32 sm:h-48 text-gray-700" />
-                      </div>
-                    )}
+                    {/* Animated glow effect */}
+                    <div className="absolute -inset-6 bg-gradient-to-tr from-green-500/30 via-yellow-400/10 to-green-500/30 rounded-[32px] blur-3xl opacity-50 animate-pulse"></div>
                     
-                    {/* Overlay gradient for depth */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none"></div>
-                  </motion.div>
-                </motion.div>
-              </div>
-
-              {/* Info Section */}
-              <div className="w-full lg:w-[55%] text-center lg:text-left">
-                <div className="max-w-3xl space-y-8 lg:space-y-12">
-                  <motion.div
-                    initial={{ y: 50, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: 0.3, duration: 0.8 }}
-                  >
-                    <h2 className="text-sm sm:text-2xl font-mono text-[#A5D6A7] uppercase tracking-[0.5em] mb-4 font-bold drop-shadow-md">Wisudawan</h2>
-                    <h1 className="text-4xl sm:text-7xl lg:text-8xl font-serif font-bold leading-[1.1] mb-6 bg-gradient-to-r from-white via-green-50 to-white bg-clip-text text-transparent bg-[length:200%_auto] animate-shimmer drop-shadow-2xl tracking-tight">
-                      {currentStudent.name}
-                    </h1>
                     <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: 200 }}
-                      transition={{ delay: 1, duration: 1.2 }}
-                      className="h-2 bg-gradient-to-r from-[#81C784] to-yellow-400 mx-auto lg:mx-0 rounded-full shadow-[0_0_20px_rgba(129,199,132,0.6)]"
-                    />
-                  </motion.div>
-
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.6, duration: 0.5 }}
-                    className="grid grid-cols-2 gap-8 lg:gap-12"
-                  >
-                    {[
-                      { label: 'Jurusan', value: currentStudent.major },
-                      { label: 'Kelas', value: currentStudent.class },
-                      { label: 'Nilai', value: currentStudent.grade || '-' },
-                      { label: 'Predikat', value: currentStudent.predicate || '-', isItalic: true },
-                      { label: 'Orang Tua', value: currentStudent.parentName || '-', fullWidth: true },
-                      { label: 'Alamat', value: currentStudent.address || '-', fullWidth: true, isSmall: true }
-                    ].map((item, index) => (
-                      <motion.div 
-                        key={item.label}
-                        initial={{ y: 20, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.7 + (index * 0.1) }}
-                        className={`${item.fullWidth ? 'col-span-2' : ''}`}
-                      >
-                        <p className="text-[10px] sm:text-base font-mono text-white/50 uppercase tracking-widest mb-2 font-bold">{item.label}</p>
-                        <p className={`
-                          ${item.isSmall ? 'text-base sm:text-2xl text-white/80' : 'text-xl sm:text-4xl font-medium text-white'}
-                          ${item.isItalic ? 'font-serif italic text-[#A5D6A7]' : ''}
-                          drop-shadow-lg leading-tight
-                        `}>
-                          {item.value}
-                        </p>
-                      </motion.div>
-                    ))}
+                      whileHover={{ scale: 1.02, rotateY: 5 }}
+                      className="relative w-full aspect-[3/4] bg-gray-800 rounded-[24px] overflow-hidden border-4 sm:border-8 border-white shadow-[0_0_40px_rgba(34,197,94,0.4)]"
+                    >
+                      {currentStudent.photoUrl ? (
+                        <motion.img 
+                          initial={{ scale: 1.1 }}
+                          animate={{ scale: 1 }}
+                          transition={{ duration: 1.2 }}
+                          src={currentStudent.photoUrl} 
+                          className="w-full h-full object-cover" 
+                          alt={currentStudent.name} 
+                          referrerPolicy="no-referrer" 
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                          <Users className="w-24 sm:w-32 h-24 sm:h-32 text-gray-700" />
+                        </div>
+                      )}
+                      
+                      {/* Overlay gradient for depth */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none"></div>
+                    </motion.div>
                   </motion.div>
                 </div>
+
+                {/* Info Section */}
+                <div className="w-full lg:w-[60%] text-center lg:text-left overflow-visible">
+                  <div className="max-w-3xl space-y-6 lg:space-y-10">
+                    <motion.div
+                      initial={{ y: 30, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      transition={{ delay: 0.2, duration: 0.6 }}
+                    >
+                      <h2 className="text-xs sm:text-lg font-mono text-[#A5D6A7] uppercase tracking-[0.2em] mb-1 font-bold drop-shadow-md">Wisudawan</h2>
+                      <h1 className="text-2xl sm:text-4xl lg:text-5xl xl:text-6xl font-serif font-bold leading-tight mb-3 bg-gradient-to-r from-white via-green-50 to-white bg-clip-text text-transparent bg-[length:200%_auto] animate-shimmer drop-shadow-2xl tracking-tight">
+                        {currentStudent.name}
+                      </h1>
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: 120 }}
+                        transition={{ delay: 0.8, duration: 1 }}
+                        className="h-1 bg-gradient-to-r from-[#81C784] to-yellow-400 mx-auto lg:mx-0 rounded-full shadow-[0_0_15px_rgba(129,199,132,0.5)]"
+                      />
+                    </motion.div>
+
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.4, duration: 0.5 }}
+                      className="space-y-4 sm:space-y-5"
+                    >
+                      {[
+                        { label: 'Kelas', value: currentStudent.class || '-', icon: GraduationCap, color: 'text-blue-400' },
+                        { label: 'Orang Tua / Wali', value: currentStudent.parentName || '-', icon: Users, color: 'text-green-400' },
+                        { label: 'Alamat', value: currentStudent.address || '-', icon: MapPin, color: 'text-yellow-400', isSmall: true }
+                      ].map((item, index) => (
+                        <motion.div 
+                          key={item.label}
+                          initial={{ x: 30, opacity: 0 }}
+                          animate={{ x: 0, opacity: 1 }}
+                          transition={{ delay: 0.5 + (index * 0.1) }}
+                          className="flex items-start gap-4 sm:gap-5 bg-white/5 p-4 sm:p-5 rounded-[24px] border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all duration-300 group"
+                        >
+                          <div className={cn("w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/5 flex items-center justify-center shadow-inner border border-white/5 group-hover:scale-110 transition-transform shrink-0", item.color)}>
+                            <item.icon className="w-5 h-5 sm:w-6 sm:h-6" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[8px] sm:text-[10px] font-mono text-white/40 uppercase tracking-widest mb-0.5 font-bold">{item.label}</p>
+                            <p className={cn(
+                              "font-medium text-white leading-tight truncate",
+                              item.isSmall ? "text-sm sm:text-lg italic font-serif opacity-90" : "text-lg sm:text-2xl"
+                            )}>
+                              {item.value}
+                            </p>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </motion.div>
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-center">
+                <div>
+                  <h1 className="text-3xl font-serif">Belum Ada Siswa Dipilih</h1>
+                  <p className="text-gray-500 mt-2">Silakan pilih siswa dari panel admin.</p>
+                </div>
               </div>
-            </motion.div>
-          ) : (
-            <div className="text-center">
-              <h1 className="text-4xl font-serif">Belum Ada Siswa Dipilih</h1>
-              <p className="text-gray-500 mt-4">Silakan pilih siswa dari panel admin.</p>
-            </div>
-          )}
-        </AnimatePresence>
+            )}
+          </AnimatePresence>
+        </div>
 
-        {/* Controls */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-8 no-print z-20 bg-black/30 backdrop-blur-md px-6 py-3 rounded-full border border-white/10 shadow-2xl">
-          <motion.button 
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setCurrentStudentIndex(prev => Math.max(0, prev - 1))}
-            className="p-3 sm:p-4 bg-white/10 rounded-full hover:bg-white/20 transition-all border border-white/10"
-          >
-            <ChevronLeft className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
-          </motion.button>
-          
-          <div className="flex flex-col items-center gap-1">
-            <div className="flex items-center gap-3 font-mono text-sm sm:text-lg">
-              <span className="text-white font-bold">{currentStudentIndex + 1}</span>
-              <span className="text-white/30">/</span>
-              <span className="text-white/50">{students.length}</span>
+        {/* Controls (Footer) */}
+        <div className="relative z-30 py-6 flex justify-center shrink-0">
+          <div className="flex items-center gap-4 sm:gap-8 no-print bg-black/40 backdrop-blur-xl px-4 sm:px-6 py-2 sm:py-3 rounded-full border border-white/10 shadow-2xl shadow-black/50">
+            <motion.button 
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setCurrentStudentIndex(prev => Math.max(0, prev - 1))}
+              className="p-2 sm:p-3 bg-white/10 rounded-full hover:bg-white/20 transition-all border border-white/10"
+            >
+              <ChevronLeft className="w-5 h-5 sm:w-7 sm:h-7 text-white" />
+            </motion.button>
+            
+            <div className="flex flex-col items-center gap-0.5">
+              <div className="flex items-center gap-2 font-mono text-xs sm:text-base">
+                <span className="text-white font-bold">{currentStudentIndex + 1}</span>
+                <span className="text-white/30">/</span>
+                <span className="text-white/50">{students.length}</span>
+              </div>
+              <div className="w-16 sm:w-24 h-1 bg-white/10 rounded-full overflow-hidden">
+                <motion.div 
+                  className="h-full bg-green-500"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${((currentStudentIndex + 1) / students.length) * 100}%` }}
+                />
+              </div>
             </div>
-            <div className="w-20 sm:w-28 h-1 bg-white/10 rounded-full overflow-hidden">
-              <motion.div 
-                className="h-full bg-green-500"
-                initial={{ width: 0 }}
-                animate={{ width: `${((currentStudentIndex + 1) / students.length) * 100}%` }}
-              />
-            </div>
+
+            <motion.button 
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setCurrentStudentIndex(prev => Math.min(students.length - 1, prev + 1))}
+              className="p-2 sm:p-3 bg-white/10 rounded-full hover:bg-white/20 transition-all border border-white/10"
+            >
+              <ChevronRight className="w-5 h-5 sm:w-7 sm:h-7 text-white" />
+            </motion.button>
           </div>
-
-          <motion.button 
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setCurrentStudentIndex(prev => Math.min(students.length - 1, prev + 1))}
-            className="p-3 sm:p-4 bg-white/10 rounded-full hover:bg-white/20 transition-all border border-white/10"
-          >
-            <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
-          </motion.button>
         </div>
       </div>
     );
@@ -986,6 +1095,7 @@ export default function App() {
 
           <nav className="flex-1 space-y-2 overflow-y-auto custom-scrollbar pr-2">
             {[
+              { id: 'dashboard', icon: BarChartIcon, label: 'Dashboard' },
               { id: 'list', icon: ListIcon, label: 'Data Siswa' },
               { id: 'upload', icon: Upload, label: 'Unggah Data' },
               { id: 'seating', icon: Grid, label: 'Tempat Duduk' },
@@ -1069,6 +1179,7 @@ export default function App() {
                   animate={{ opacity: 1, x: 0 }}
                   className="text-3xl md:text-4xl font-serif font-bold text-gray-900 tracking-tight"
                 >
+                  {activeTab === 'dashboard' && "Dashboard Ringkasan"}
                   {activeTab === 'list' && "Manajemen Siswa"}
                   {activeTab === 'upload' && "Unggah Data Siswa"}
                   {activeTab === 'seating' && "Pengaturan Tempat Duduk"}
@@ -1083,7 +1194,8 @@ export default function App() {
                   transition={{ delay: 0.1 }}
                   className="text-gray-500 mt-2 font-medium"
                 >
-                  {activeTab === 'settings' ? "Sesuaikan identitas sekolah Anda." : 
+                  {activeTab === 'dashboard' ? "Ringkasan statistik data wisudawan." :
+                   activeTab === 'settings' ? "Sesuaikan identitas sekolah Anda." : 
                    activeTab === 'invitation' ? "Cetak kartu undangan untuk wisudawan." :
                    activeTab === 'registration' ? "Kelola kehadiran wisudawan di lokasi." :
                    "Kelola informasi wisudawan SMK Anda di sini."}
@@ -1132,6 +1244,187 @@ export default function App() {
             </header>
 
             <div className="transition-all duration-500">
+            {activeTab === 'dashboard' && (
+              <div className="space-y-8">
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {[
+                    { label: 'Total Siswa', value: stats.total, icon: Users, color: 'bg-blue-500' },
+                    { label: 'Sudah Hadir', value: stats.registered, icon: CheckCircle, color: 'bg-green-500' },
+                    { label: 'Belum Hadir', value: stats.unregistered, icon: Monitor, color: 'bg-orange-500' },
+                  ].map((stat, i) => (
+                    <motion.div
+                      key={stat.label}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                      className="bg-white p-8 rounded-[32px] shadow-xl border border-gray-100 flex items-center gap-6 group hover:shadow-2xl transition-all duration-500"
+                    >
+                      <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg", stat.color)}>
+                        <stat.icon className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-mono text-gray-400 uppercase tracking-widest font-bold">{stat.label}</p>
+                        <p className="text-4xl font-serif font-bold text-gray-900 mt-1">{stat.value}</p>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Major Distribution */}
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="lg:col-span-2 bg-white p-8 rounded-[32px] shadow-xl border border-gray-100"
+                  >
+                    <div className="flex items-center justify-between mb-8">
+                      <h3 className="text-xl font-serif font-bold text-gray-900 flex items-center gap-3">
+                        <BarChartIcon className="w-6 h-6 text-[#2e7d32]" />
+                        Distribusi Jurusan
+                      </h3>
+                    </div>
+                    <div className="h-[350px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={stats.majorData} layout="vertical" margin={{ left: 40, right: 40 }}>
+                          <XAxis type="number" hide />
+                          <YAxis 
+                            dataKey="name" 
+                            type="category" 
+                            width={100} 
+                            tick={{ fontSize: 12, fontWeight: 600 }}
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <Tooltip 
+                            cursor={{ fill: 'transparent' }}
+                            contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
+                          />
+                          <Bar 
+                            dataKey="value" 
+                            fill="#2e7d32" 
+                            radius={[0, 10, 10, 0]} 
+                            barSize={30}
+                            label={{ position: 'right', fontSize: 12, fontWeight: 700, fill: '#666' }}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </motion.div>
+
+                  {/* Top Students */}
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.2 }}
+                    className="bg-white p-8 rounded-[32px] shadow-xl border border-gray-100"
+                  >
+                    <h3 className="text-xl font-serif font-bold text-gray-900 flex items-center gap-3 mb-8">
+                      <TrendingUp className="w-6 h-6 text-yellow-500" />
+                      Wisudawan Terbaik
+                    </h3>
+                    <div className="space-y-6">
+                      {students
+                        .filter(s => s.grade)
+                        .sort((a, b) => (b.grade || 0) - (a.grade || 0))
+                        .slice(0, 5)
+                        .map((student, idx) => (
+                          <div key={student.id} className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-600 font-bold">
+                              {idx + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-gray-900 truncate">{student.name}</p>
+                              <p className="text-xs text-gray-500 truncate">{student.major}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-mono font-bold text-[#2e7d32]">{student.grade}</p>
+                              <p className="text-[10px] text-gray-400 uppercase font-bold">{student.predicate}</p>
+                            </div>
+                          </div>
+                        ))}
+                      {students.filter(s => s.grade).length === 0 && (
+                        <div className="text-center py-12 text-gray-400 italic">Belum ada data nilai</div>
+                      )}
+                    </div>
+                  </motion.div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Gender Distribution */}
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.2 }}
+                    className="bg-white p-8 rounded-[32px] shadow-xl border border-gray-100"
+                  >
+                    <div className="flex items-center justify-between mb-8">
+                      <h3 className="text-xl font-serif font-bold text-gray-900 flex items-center gap-3">
+                        <PieChartIcon className="w-6 h-6 text-[#2e7d32]" />
+                        Distribusi Gender
+                      </h3>
+                    </div>
+                    <div className="h-[350px] w-full flex items-center justify-center">
+                      {stats.genderData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={stats.genderData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={80}
+                              outerRadius={120}
+                              paddingAngle={8}
+                              dataKey="value"
+                            >
+                              <Cell fill="#3b82f6" />
+                              <Cell fill="#ec4899" />
+                            </Pie>
+                            <Tooltip 
+                              contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
+                            />
+                            <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="text-gray-400 font-medium">Belum ada data gender</div>
+                      )}
+                    </div>
+                  </motion.div>
+                </div>
+
+                {/* Recent Activity / Quick Actions */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] p-10 rounded-[40px] text-white shadow-2xl relative overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 w-96 h-96 bg-green-500/10 rounded-full blur-[100px] -mr-48 -mt-48" />
+                  <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+                    <div className="space-y-4 text-center md:text-left">
+                      <h3 className="text-3xl font-serif font-bold">Siap untuk Wisuda?</h3>
+                      <p className="text-gray-400 max-w-md">Kelola data wisudawan dengan mudah. Mulai dari unggah data hingga pengaturan tempat duduk dan registrasi ulang.</p>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-4">
+                      <button 
+                        onClick={() => setActiveTab('list')}
+                        className="px-8 py-4 bg-white text-black rounded-2xl font-bold hover:bg-gray-100 transition-all active:scale-95"
+                      >
+                        Lihat Data Siswa
+                      </button>
+                      <button 
+                        onClick={() => setActiveTab('registration')}
+                        className="px-8 py-4 bg-green-600 text-white rounded-2xl font-bold hover:bg-green-700 transition-all active:scale-95 border border-green-500/30"
+                      >
+                        Mulai Registrasi
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+
             {activeTab === 'list' && (
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
@@ -1142,8 +1435,11 @@ export default function App() {
                   <table className="w-full text-left">
                     <thead>
                       <tr className="bg-gray-50/50">
-                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Wisudawan</th>
-                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em] hidden md:table-cell">Jurusan & Kelas</th>
+                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em] w-16">No</th>
+                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Nama</th>
+                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Kelas</th>
+                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Orang Tua</th>
+                        <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Alamat</th>
                         <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em]">Status</th>
                         <th className="px-3 md:px-6 py-5 text-xs md:text-sm font-black text-gray-400 uppercase tracking-[0.2em] text-right">Aksi</th>
                       </tr>
@@ -1158,6 +1454,9 @@ export default function App() {
                             transition={{ delay: index * 0.03 }}
                             className="hover:bg-green-50/30 transition-colors group"
                           >
+                            <td className="px-3 md:px-6 py-5 text-sm font-bold text-gray-400">
+                              {index + 1}
+                            </td>
                             <td className="px-2 md:px-6 py-5">
                               <div className="flex items-center gap-2 md:gap-4">
                                 <div className="w-10 h-10 md:w-12 md:h-12 bg-gray-100 rounded-xl overflow-hidden border border-gray-100 group-hover:border-green-200 transition-colors flex-shrink-0">
@@ -1171,19 +1470,18 @@ export default function App() {
                                 </div>
                                 <div>
                                   <p className="font-bold text-gray-900 text-sm md:text-lg leading-tight">{student.name}</p>
-                                  <p className="text-[10px] md:text-sm text-gray-400 font-bold uppercase tracking-wider">NISN: {student.nisn || student.id.slice(0, 8)}</p>
-                                  <div className="md:hidden mt-1">
-                                    <span className="text-[10px] font-bold text-blue-600 uppercase bg-blue-50 px-1.5 py-0.5 rounded-md mr-1">{student.major}</span>
-                                    <span className="text-[10px] font-bold text-gray-500 uppercase bg-gray-50 px-1.5 py-0.5 rounded-md">{student.class || '-'}</span>
-                                  </div>
+                                  <p className="text-[10px] md:text-sm text-gray-400 font-bold uppercase tracking-wider">{student.major}</p>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-2 md:px-6 py-5 hidden md:table-cell">
-                              <div className="flex flex-col">
-                                <span className="text-sm font-bold text-gray-700">{student.major}</span>
-                                <span className="text-xs text-gray-400 font-bold uppercase">{student.class || '-'}</span>
-                              </div>
+                            <td className="px-2 md:px-6 py-5">
+                              <span className="text-sm font-bold text-gray-700">{student.class || '-'}</span>
+                            </td>
+                            <td className="px-2 md:px-6 py-5">
+                              <span className="text-sm text-gray-600 font-medium">{student.parentName || '-'}</span>
+                            </td>
+                            <td className="px-2 md:px-6 py-5 max-w-xs">
+                              <p className="text-xs text-gray-500 line-clamp-2">{student.address || '-'}</p>
                             </td>
                             <td className="px-2 md:px-6 py-5">
                               <button 
@@ -1237,7 +1535,7 @@ export default function App() {
                       </AnimatePresence>
                       {filteredStudents.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="px-6 py-20 text-center text-gray-400">
+                          <td colSpan={7} className="px-6 py-20 text-center text-gray-400">
                             <Users className="w-12 h-12 mx-auto mb-4 opacity-20" />
                             <p className="text-sm font-medium">Tidak ada data siswa ditemukan.</p>
                           </td>
@@ -1268,8 +1566,8 @@ export default function App() {
                       </p>
                       <ul className="space-y-3 mb-8">
                         {[
-                          'Kolom wajib: Nama, NISN, Kelas',
-                          'Opsional: Nilai, Prestasi, Alamat',
+                          'Kolom wajib: Nama, NISN, Kelas, Gender (L/P)',
+                          'Opsional: Nilai, Prestasi, Alamat, Orang Tua',
                           'Sistem akan otomatis menentukan Jurusan',
                           'Predikat dihitung otomatis dari Nilai'
                         ].map((item, i) => (
@@ -1471,66 +1769,103 @@ export default function App() {
                       const printWindow = window.open('', '_blank');
                       if (printWindow) {
                         const studentsHtml = filteredStudents.map(student => `
-                          <div class="w-full h-[148mm] bg-green-50/10 border-b-2 border-dashed border-gray-300 overflow-hidden flex flex-col page-break">
-                            <div class="p-8 flex flex-row gap-8 items-start relative overflow-hidden">
-                              <div class="w-32 h-40 bg-white rounded-2xl overflow-hidden border-4 border-white shadow-lg flex-shrink-0 relative z-10">
-                                ${student.photoUrl ? `<img src="${student.photoUrl}" class="w-full h-full object-cover" />` : `<div class="w-full h-full flex items-center justify-center bg-green-50"><svg class="w-12 h-12 text-green-200" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>`}
+                          <div class="w-full h-[148mm] bg-white border-b-4 border-double border-gray-200 overflow-hidden flex flex-col page-break relative">
+                            <!-- Decorative Background Elements -->
+                            <div class="absolute top-0 left-0 w-32 h-32 border-t-8 border-l-8 border-yellow-600/20 rounded-tl-3xl m-4"></div>
+                            <div class="absolute top-0 right-0 w-32 h-32 border-t-8 border-r-8 border-yellow-600/20 rounded-tr-3xl m-4"></div>
+                            <div class="absolute bottom-0 left-0 w-32 h-32 border-b-8 border-l-8 border-yellow-600/20 rounded-bl-3xl m-4"></div>
+                            <div class="absolute bottom-0 right-0 w-32 h-32 border-b-8 border-r-8 border-yellow-600/20 rounded-br-3xl m-4"></div>
+                            
+                            <!-- School Header (Kop) -->
+                            <div class="pt-10 px-12 flex flex-col items-center text-center relative z-10">
+                              ${schoolLogo ? `<img src="${schoolLogo}" class="w-16 h-16 object-contain mb-2" />` : ''}
+                              <h3 class="text-xl font-serif font-bold text-gray-900 uppercase tracking-wider">${schoolName}</h3>
+                              <div class="h-0.5 w-32 bg-yellow-600/30 mt-1"></div>
+                            </div>
+
+                            <div class="p-12 pt-6 flex flex-row gap-10 items-center relative z-10">
+                              <div class="w-40 h-52 bg-white rounded-xl overflow-hidden border-[6px] border-white shadow-2xl flex-shrink-0 rotate-[-2deg]">
+                                ${student.photoUrl ? `<img src="${student.photoUrl}" class="w-full h-full object-cover" />` : `<div class="w-full h-full flex items-center justify-center bg-gray-50"><svg class="w-16 h-16 text-gray-200" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>`}
                               </div>
-                              <div class="flex-1 space-y-4">
-                                <div class="pb-4 border-b border-dashed border-green-200">
-                                  <h4 class="text-[10px] font-mono text-green-700 uppercase tracking-widest mb-1 font-bold">Undangan Wisuda</h4>
-                                  <h3 class="text-2xl font-serif font-bold text-gray-900">${student.name}</h3>
-                                  <p class="text-sm text-green-700/70 font-mono">NISN: ${student.nisn || '-'}</p>
-                                </div>
-                                <div class="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <p class="text-[8px] font-mono text-green-700/50 uppercase tracking-widest mb-1">Kelas</p>
-                                    <p class="text-base font-bold text-gray-800">${student.class || '-'}</p>
+                              
+                              <div class="flex-1 space-y-6">
+                                <div class="text-center sm:text-left">
+                                  <div class="inline-block px-4 py-1 bg-yellow-600/10 rounded-full mb-2">
+                                    <h4 class="text-[10px] font-mono text-yellow-800 uppercase tracking-[0.3em] font-bold">Undangan Resmi</h4>
                                   </div>
-                                  <div>
-                                    <p class="text-[8px] font-mono text-green-700/50 uppercase tracking-widest mb-1">Nomor Kursi</p>
-                                    <p class="text-base font-bold text-gray-800">No. ${student.seatNumber || '-'}</p>
+                                  <h2 class="text-sm font-serif italic text-gray-500 mb-1">${invitationMessage}</h2>
+                                  <h1 class="text-4xl font-serif font-bold text-gray-900 leading-tight mb-2">${student.name}</h1>
+                                  <div class="flex items-center gap-3 justify-center sm:justify-start">
+                                    <span class="h-px w-8 bg-yellow-600/30"></span>
+                                    <p class="text-sm text-yellow-700 font-mono font-bold tracking-widest">NISN: ${student.nisn || '-'}</p>
+                                    <span class="h-px w-8 bg-yellow-600/30"></span>
                                   </div>
                                 </div>
-                                <div class="pt-2">
-                                  <p class="text-[8px] font-mono text-green-700/50 uppercase tracking-widest mb-1">Lokasi & Waktu</p>
-                                  <p class="text-xs text-gray-700 font-medium italic">Gedung Serbaguna ${schoolName}</p>
-                                  <p class="text-xs text-gray-700 font-medium italic">Senin, 15 Juni 2026 | 08:00 WIB</p>
+
+                                <div class="grid grid-cols-2 gap-8 py-4 border-y border-yellow-600/10">
+                                  <div class="text-center">
+                                    <p class="text-[9px] font-mono text-gray-400 uppercase tracking-widest mb-1">Kelas & Jurusan</p>
+                                    <p class="text-lg font-bold text-gray-800">${student.class || '-'}</p>
+                                  </div>
+                                  <div class="text-center">
+                                    <p class="text-[9px] font-mono text-gray-400 uppercase tracking-widest mb-1">Nomor Kursi</p>
+                                    <p class="text-lg font-bold text-gray-800">KURSI ${student.seatNumber || '-'}</p>
+                                  </div>
+                                </div>
+
+                                <div class="space-y-1 text-center sm:text-left">
+                                  <p class="text-[9px] font-mono text-gray-400 uppercase tracking-widest mb-1">Waktu & Tempat</p>
+                                  <p class="text-sm text-gray-800 font-bold">Gedung Serbaguna ${schoolName}</p>
+                                  <p class="text-xs text-gray-600 font-medium italic">${eventDay}, ${eventDate} | Pukul 08:00 WIB s/d Selesai</p>
                                 </div>
                               </div>
                             </div>
 
-                            <div class="grid grid-cols-2 border-t-2 border-dashed border-green-100 mt-auto">
-                              <div class="p-6 border-r-2 border-dashed border-green-200">
-                                <div class="flex justify-between items-start mb-2">
-                                  <div>
-                                    <h5 class="text-[8px] font-mono text-green-700 uppercase tracking-widest font-bold">Voucher Snack</h5>
-                                    <h4 class="text-sm font-serif font-bold text-gray-900">WISUDAWAN</h4>
-                                  </div>
-                                </div>
-                                <div class="space-y-1">
-                                  <p class="text-xs font-bold text-gray-800 truncate">${student.name}</p>
-                                  <p class="text-[8px] font-mono text-green-700/60 uppercase tracking-wider">${student.class} | No. ${student.seatNumber}</p>
-                                </div>
-                                <div class="mt-4 pt-2 border-t border-green-200/50 flex justify-between items-center">
-                                  <span class="text-[8px] font-mono text-green-700/40">ID: ${student.id.slice(0, 12)}</span>
-                                  <span class="text-[8px] font-bold text-white px-2 py-1 bg-gray-800 rounded">VALID</span>
-                                </div>
+                            <!-- Voucher Section -->
+                            <div class="mt-auto bg-gray-50/50 border-t-4 border-double border-gray-200">
+                              <div class="flex items-center justify-center -mt-3 mb-2">
+                                <span class="bg-white px-4 py-1 text-[10px] font-mono text-gray-400 uppercase tracking-[0.4em] border border-gray-200 rounded-full">Voucher Konsumsi</span>
                               </div>
-                              <div class="p-6">
-                                <div class="flex justify-between items-start mb-2">
-                                  <div>
-                                    <h5 class="text-[8px] font-mono text-green-700 uppercase tracking-widest font-bold">Voucher Snack</h5>
-                                    <h4 class="text-sm font-serif font-bold text-gray-900">ORANG TUA</h4>
+                              <div class="grid grid-cols-2 divide-x-2 divide-dashed divide-gray-200">
+                                <div class="p-8 relative overflow-hidden">
+                                  <div class="absolute top-0 right-0 w-12 h-12 bg-yellow-600/5 rounded-bl-full"></div>
+                                  <div class="flex justify-between items-start mb-4">
+                                    <div>
+                                      <h5 class="text-[8px] font-mono text-yellow-700 uppercase tracking-widest font-bold mb-1">Voucher A</h5>
+                                      <h4 class="text-lg font-serif font-bold text-gray-900">WISUDAWAN</h4>
+                                    </div>
+                                    <div class="w-10 h-10 bg-white rounded-lg border border-gray-100 shadow-sm flex items-center justify-center">
+                                      <span class="text-[10px] font-bold text-gray-300">QR</span>
+                                    </div>
+                                  </div>
+                                  <div class="space-y-1">
+                                    <p class="text-sm font-bold text-gray-800 truncate">${student.name}</p>
+                                    <p class="text-[9px] font-mono text-gray-500 uppercase tracking-wider">${student.class} | KURSI ${student.seatNumber}</p>
+                                  </div>
+                                  <div class="mt-4 pt-3 border-t border-gray-200 flex justify-between items-center">
+                                    <span class="text-[8px] font-mono text-gray-400">KODE: ${student.id.slice(0, 8).toUpperCase()}</span>
+                                    <span class="text-[9px] font-bold text-white px-3 py-1 bg-gray-900 rounded-lg tracking-widest">SAH</span>
                                   </div>
                                 </div>
-                                <div class="space-y-1">
-                                  <p class="text-xs font-bold text-gray-800 truncate">Orang Tua dari ${student.name}</p>
-                                  <p class="text-[8px] font-mono text-green-700/60 uppercase tracking-wider">${student.class} | No. ${student.seatNumber}</p>
-                                </div>
-                                <div class="mt-4 pt-2 border-t border-green-200/50 flex justify-between items-center">
-                                  <span class="text-[8px] font-mono text-green-700/40">ID: ${student.id.slice(0, 12)}</span>
-                                  <span class="text-[8px] font-bold text-white px-2 py-1 bg-gray-800 rounded">VALID</span>
+                                <div class="p-8 relative overflow-hidden">
+                                  <div class="absolute top-0 right-0 w-12 h-12 bg-yellow-600/5 rounded-bl-full"></div>
+                                  <div class="flex justify-between items-start mb-4">
+                                    <div>
+                                      <h5 class="text-[8px] font-mono text-yellow-700 uppercase tracking-widest font-bold mb-1">Voucher B</h5>
+                                      <h4 class="text-lg font-serif font-bold text-gray-900">ORANG TUA</h4>
+                                    </div>
+                                    <div class="w-10 h-10 bg-white rounded-lg border border-gray-100 shadow-sm flex items-center justify-center">
+                                      <span class="text-[10px] font-bold text-gray-300">QR</span>
+                                    </div>
+                                  </div>
+                                  <div class="space-y-1">
+                                    <p class="text-sm font-bold text-gray-800 truncate">Pendamping Wisudawan</p>
+                                    <p class="text-[9px] font-mono text-gray-500 uppercase tracking-wider">${student.class} | KURSI ${student.seatNumber}</p>
+                                  </div>
+                                  <div class="mt-4 pt-3 border-t border-gray-200 flex justify-between items-center">
+                                    <span class="text-[8px] font-mono text-gray-400">KODE: ${student.id.slice(0, 8).toUpperCase()}</span>
+                                    <span class="text-[9px] font-bold text-white px-3 py-1 bg-gray-900 rounded-lg tracking-widest">SAH</span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -1589,34 +1924,100 @@ export default function App() {
                       className="glass-card rounded-[32px] border border-white/20 shadow-xl overflow-hidden flex flex-col group"
                     >
                       {/* Preview Card */}
-                      <div className="p-6 md:p-8 flex flex-col sm:flex-row gap-6 items-start relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-green-100/30 rounded-bl-full -mr-10 -mt-10 blur-2xl group-hover:bg-green-200/40 transition-colors" />
+                      <div className="p-8 flex flex-col relative overflow-hidden bg-white">
+                        <div className="absolute top-0 left-0 w-24 h-24 border-t-4 border-l-4 border-yellow-600/10 rounded-tl-2xl m-2" />
+                        <div className="absolute top-0 right-0 w-24 h-24 border-t-4 border-r-4 border-yellow-600/10 rounded-tr-2xl m-2" />
                         
-                        <div className="w-28 h-36 bg-white rounded-2xl overflow-hidden border-4 border-white shadow-lg flex-shrink-0 relative z-10 mx-auto sm:mx-0">
+                        {/* School Header Preview */}
+                        <div className="flex flex-col items-center text-center mb-6 relative z-10">
+                          {schoolLogo ? (
+                            <img src={schoolLogo} className="w-12 h-12 object-contain mb-2" alt="Logo" />
+                          ) : (
+                            <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center mb-2">
+                              <Users className="w-6 h-6 text-gray-300" />
+                            </div>
+                          )}
+                          <h4 className="text-sm font-serif font-bold text-gray-900 uppercase tracking-wider">{schoolName}</h4>
+                          <div className="h-0.5 w-20 bg-yellow-600/20 mt-1"></div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-8 items-center sm:items-start relative z-10">
+                          <div className="w-32 h-44 bg-white rounded-xl overflow-hidden border-[6px] border-white shadow-xl flex-shrink-0 relative group-hover:rotate-[-2deg] transition-transform duration-500">
                           {student.photoUrl ? (
                             <img src={student.photoUrl} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-green-50">
-                              <Users className="w-10 h-10 text-green-200" />
+                            <div className="w-full h-full flex items-center justify-center bg-gray-50">
+                              <Users className="w-12 h-12 text-gray-200" />
                             </div>
                           )}
                         </div>
                         
-                        <div className="flex-1 space-y-4 relative z-10 w-full">
-                          <div className="pb-4 border-b border-dashed border-green-200/50">
-                            <h4 className="text-xs font-mono text-[#2e7d32] uppercase tracking-[0.2em] mb-1 font-black">Undangan Wisuda</h4>
-                            <h3 className="text-xl font-serif font-bold text-gray-900 truncate">{student.name}</h3>
-                            <p className="text-xs text-[#2e7d32]/70 font-mono">NISN: {student.nisn || '-'}</p>
+                        <div className="flex-1 space-y-4 relative z-10 w-full text-center sm:text-left">
+                          <div>
+                            <span className="inline-block px-3 py-0.5 bg-yellow-600/10 text-yellow-800 text-[10px] font-mono font-bold uppercase tracking-widest rounded-full mb-2">
+                              Undangan Resmi
+                            </span>
+                            <h4 className="text-sm font-serif italic text-gray-400 mb-1">Undangan Wisuda</h4>
+                            <h3 className="text-2xl font-serif font-bold text-gray-900 leading-tight group-hover:text-yellow-700 transition-colors truncate">
+                              {student.name}
+                            </h3>
+                            <p className="text-[10px] text-gray-500 mt-1 italic max-w-[200px] line-clamp-2">{invitationMessage}</p>
+                            <p className="text-xs text-yellow-700 font-mono font-bold mt-2 tracking-widest">NISN: {student.nisn || '-'}</p>
                           </div>
                           
-                          <div className="grid grid-cols-2 gap-4">
+                          <div className="grid grid-cols-2 gap-4 py-3 border-y border-yellow-600/10">
                             <div>
-                              <p className="text-[10px] font-mono text-[#2e7d32]/50 uppercase tracking-widest mb-0.5">Kelas</p>
+                              <p className="text-[9px] font-mono text-gray-400 uppercase tracking-widest mb-0.5">Kelas</p>
                               <p className="text-sm font-bold text-gray-800">{student.class || '-'}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-mono text-[#2e7d32]/50 uppercase tracking-widest mb-0.5">Kursi</p>
-                              <p className="text-sm font-bold text-gray-800">No. {student.seatNumber || '-'}</p>
+                              <p className="text-[9px] font-mono text-gray-400 uppercase tracking-widest mb-0.5">Kursi</p>
+                              <p className="text-sm font-bold text-gray-800">KURSI {student.seatNumber || '-'}</p>
+                            </div>
+                          </div>
+
+                          <div className="pt-1">
+                            <p className="text-[9px] font-mono text-gray-400 uppercase tracking-widest mb-1">Lokasi & Waktu</p>
+                            <p className="text-xs text-gray-700 font-bold">Gedung Serbaguna {schoolName}</p>
+                            <p className="text-[10px] text-gray-500 font-medium italic">{eventDay}, {eventDate} | 08:00 WIB</p>
+                          </div>
+                        </div>
+                        </div>
+                      </div>
+
+                      {/* Voucher Section Preview */}
+                      <div className="mt-auto bg-gray-50/80 border-t-2 border-dashed border-gray-200">
+                        <div className="grid grid-cols-2 divide-x divide-dashed divide-gray-200">
+                          <div className="p-5">
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <h5 className="text-[8px] font-mono text-yellow-700 uppercase tracking-widest font-bold">Voucher A</h5>
+                                <h4 className="text-xs font-serif font-bold text-gray-900">WISUDAWAN</h4>
+                              </div>
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-[10px] font-bold text-gray-800 truncate">{student.name}</p>
+                              <p className="text-[8px] font-mono text-gray-500 uppercase tracking-wider">KURSI {student.seatNumber}</p>
+                            </div>
+                            <div className="mt-3 pt-2 border-t border-gray-200 flex justify-between items-center">
+                              <span className="text-[8px] font-mono text-gray-400">KODE: {student.id.slice(0, 8).toUpperCase()}</span>
+                              <span className="text-[8px] font-bold text-white px-2 py-0.5 bg-gray-900 rounded-md">SAH</span>
+                            </div>
+                          </div>
+                          <div className="p-5">
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <h5 className="text-[8px] font-mono text-yellow-700 uppercase tracking-widest font-bold">Voucher B</h5>
+                                <h4 className="text-xs font-serif font-bold text-gray-900">ORANG TUA</h4>
+                              </div>
+                            </div>
+                            <div className="space-y-0.5">
+                              <p className="text-[10px] font-bold text-gray-800 truncate">Pendamping</p>
+                              <p className="text-[8px] font-mono text-gray-500 uppercase tracking-wider">KURSI {student.seatNumber}</p>
+                            </div>
+                            <div className="mt-3 pt-2 border-t border-gray-200 flex justify-between items-center">
+                              <span className="text-[8px] font-mono text-gray-400">KODE: {student.id.slice(0, 8).toUpperCase()}</span>
+                              <span className="text-[8px] font-bold text-white px-2 py-0.5 bg-gray-900 rounded-md">SAH</span>
                             </div>
                           </div>
                         </div>
@@ -1644,66 +2045,103 @@ export default function App() {
                                     </style>
                                   </head>
                                   <body class="p-0 bg-white">
-                                    <div class="w-full h-[148mm] bg-green-50/10 border-b-2 border-dashed border-gray-300 overflow-hidden flex flex-col">
-                                      <div class="p-8 flex flex-row gap-8 items-start relative overflow-hidden">
-                                        <div class="w-32 h-40 bg-white rounded-2xl overflow-hidden border-4 border-white shadow-lg flex-shrink-0 relative z-10">
-                                          ${student.photoUrl ? `<img src="${student.photoUrl}" class="w-full h-full object-cover" />` : `<div class="w-full h-full flex items-center justify-center bg-green-50"><svg class="w-12 h-12 text-green-200" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>`}
+                                    <div class="w-full h-[148mm] bg-white border-b-4 border-double border-gray-200 overflow-hidden flex flex-col relative">
+                                      <!-- Decorative Background Elements -->
+                                      <div class="absolute top-0 left-0 w-32 h-32 border-t-8 border-l-8 border-yellow-600/20 rounded-tl-3xl m-4"></div>
+                                      <div class="absolute top-0 right-0 w-32 h-32 border-t-8 border-r-8 border-yellow-600/20 rounded-tr-3xl m-4"></div>
+                                      <div class="absolute bottom-0 left-0 w-32 h-32 border-b-8 border-l-8 border-yellow-600/20 rounded-bl-3xl m-4"></div>
+                                      <div class="absolute bottom-0 right-0 w-32 h-32 border-b-8 border-r-8 border-yellow-600/20 rounded-br-3xl m-4"></div>
+                                      
+                                      <!-- School Header (Kop) -->
+                                      <div class="pt-10 px-12 flex flex-col items-center text-center relative z-10">
+                                        ${schoolLogo ? `<img src="${schoolLogo}" class="w-16 h-16 object-contain mb-2" />` : ''}
+                                        <h3 class="text-xl font-serif font-bold text-gray-900 uppercase tracking-wider">${schoolName}</h3>
+                                        <div class="h-0.5 w-32 bg-yellow-600/30 mt-1"></div>
+                                      </div>
+
+                                      <div class="p-12 pt-6 flex flex-row gap-10 items-center relative z-10">
+                                        <div class="w-40 h-52 bg-white rounded-xl overflow-hidden border-[6px] border-white shadow-2xl flex-shrink-0 rotate-[-2deg]">
+                                          ${student.photoUrl ? `<img src="${student.photoUrl}" class="w-full h-full object-cover" />` : `<div class="w-full h-full flex items-center justify-center bg-gray-50"><svg class="w-16 h-16 text-gray-200" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></div>`}
                                         </div>
-                                        <div class="flex-1 space-y-4">
-                                          <div class="pb-4 border-b border-dashed border-green-200">
-                                            <h4 class="text-[10px] font-mono text-green-700 uppercase tracking-widest mb-1 font-bold">Undangan Wisuda</h4>
-                                            <h3 class="text-2xl font-serif font-bold text-gray-900">${student.name}</h3>
-                                            <p class="text-sm text-green-700/70 font-mono">NISN: ${student.nisn || '-'}</p>
-                                          </div>
-                                          <div class="grid grid-cols-2 gap-4">
-                                            <div>
-                                              <p class="text-[8px] font-mono text-green-700/50 uppercase tracking-widest mb-1">Kelas</p>
-                                              <p class="text-base font-bold text-gray-800">${student.class || '-'}</p>
+                                        
+                                        <div class="flex-1 space-y-6">
+                                          <div class="text-center sm:text-left">
+                                            <div class="inline-block px-4 py-1 bg-yellow-600/10 rounded-full mb-2">
+                                              <h4 class="text-[10px] font-mono text-yellow-800 uppercase tracking-[0.3em] font-bold">Undangan Resmi</h4>
                                             </div>
-                                            <div>
-                                              <p class="text-[8px] font-mono text-green-700/50 uppercase tracking-widest mb-1">Nomor Kursi</p>
-                                              <p class="text-base font-bold text-gray-800">No. ${student.seatNumber || '-'}</p>
+                                            <h2 class="text-sm font-serif italic text-gray-500 mb-1">${invitationMessage}</h2>
+                                            <h1 class="text-4xl font-serif font-bold text-gray-900 leading-tight mb-2">${student.name}</h1>
+                                            <div class="flex items-center gap-3 justify-center sm:justify-start">
+                                              <span class="h-px w-8 bg-yellow-600/30"></span>
+                                              <p class="text-sm text-yellow-700 font-mono font-bold tracking-widest">NISN: ${student.nisn || '-'}</p>
+                                              <span class="h-px w-8 bg-yellow-600/30"></span>
                                             </div>
                                           </div>
-                                          <div class="pt-2">
-                                            <p class="text-[8px] font-mono text-green-700/50 uppercase tracking-widest mb-1">Lokasi & Waktu</p>
-                                            <p class="text-xs text-gray-700 font-medium italic">Gedung Serbaguna ${schoolName}</p>
-                                            <p class="text-xs text-gray-700 font-medium italic">Senin, 15 Juni 2026 | 08:00 WIB</p>
+
+                                          <div class="grid grid-cols-2 gap-8 py-4 border-y border-yellow-600/10">
+                                            <div class="text-center">
+                                              <p class="text-[9px] font-mono text-gray-400 uppercase tracking-widest mb-1">Kelas & Jurusan</p>
+                                              <p class="text-lg font-bold text-gray-800">${student.class || '-'}</p>
+                                            </div>
+                                            <div class="text-center">
+                                              <p class="text-[9px] font-mono text-gray-400 uppercase tracking-widest mb-1">Nomor Kursi</p>
+                                              <p class="text-lg font-bold text-gray-800">KURSI ${student.seatNumber || '-'}</p>
+                                            </div>
+                                          </div>
+
+                                          <div class="space-y-1 text-center sm:text-left">
+                                            <p class="text-[9px] font-mono text-gray-400 uppercase tracking-widest mb-1">Waktu & Tempat</p>
+                                            <p class="text-sm text-gray-800 font-bold">Gedung Serbaguna ${schoolName}</p>
+                                            <p class="text-xs text-gray-600 font-medium italic">${eventDay}, ${eventDate} | Pukul 08:00 WIB s/d Selesai</p>
                                           </div>
                                         </div>
                                       </div>
 
-                                      <div class="grid grid-cols-2 border-t-2 border-dashed border-green-100 mt-auto">
-                                        <div class="p-6 border-r-2 border-dashed border-green-200">
-                                          <div class="flex justify-between items-start mb-2">
-                                            <div>
-                                              <h5 class="text-[8px] font-mono text-green-700 uppercase tracking-widest font-bold">Voucher Snack</h5>
-                                              <h4 class="text-sm font-serif font-bold text-gray-900">WISUDAWAN</h4>
-                                            </div>
-                                          </div>
-                                          <div class="space-y-1">
-                                            <p class="text-xs font-bold text-gray-800 truncate">${student.name}</p>
-                                            <p class="text-[8px] font-mono text-green-700/60 uppercase tracking-wider">${student.class} | No. ${student.seatNumber}</p>
-                                          </div>
-                                          <div class="mt-4 pt-2 border-t border-green-200/50 flex justify-between items-center">
-                                            <span class="text-[8px] font-mono text-green-700/40">ID: ${student.id.slice(0, 12)}</span>
-                                            <span class="text-[8px] font-bold text-white px-2 py-1 bg-gray-800 rounded">VALID</span>
-                                          </div>
+                                      <!-- Voucher Section -->
+                                      <div class="mt-auto bg-gray-50/50 border-t-4 border-double border-gray-200">
+                                        <div class="flex items-center justify-center -mt-3 mb-2">
+                                          <span class="bg-white px-4 py-1 text-[10px] font-mono text-gray-400 uppercase tracking-[0.4em] border border-gray-200 rounded-full">Voucher Konsumsi</span>
                                         </div>
-                                        <div class="p-6">
-                                          <div class="flex justify-between items-start mb-2">
-                                            <div>
-                                              <h5 class="text-[8px] font-mono text-green-700 uppercase tracking-widest font-bold">Voucher Snack</h5>
-                                              <h4 class="text-sm font-serif font-bold text-gray-900">ORANG TUA</h4>
+                                        <div class="grid grid-cols-2 divide-x-2 divide-dashed divide-gray-200">
+                                          <div class="p-8 relative overflow-hidden">
+                                            <div class="absolute top-0 right-0 w-12 h-12 bg-yellow-600/5 rounded-bl-full"></div>
+                                            <div class="flex justify-between items-start mb-4">
+                                              <div>
+                                                <h5 class="text-[8px] font-mono text-yellow-700 uppercase tracking-widest font-bold mb-1">Voucher A</h5>
+                                                <h4 class="text-lg font-serif font-bold text-gray-900">WISUDAWAN</h4>
+                                              </div>
+                                              <div class="w-10 h-10 bg-white rounded-lg border border-gray-100 shadow-sm flex items-center justify-center">
+                                                <span class="text-[10px] font-bold text-gray-300">QR</span>
+                                              </div>
+                                            </div>
+                                            <div class="space-y-1">
+                                              <p class="text-sm font-bold text-gray-800 truncate">${student.name}</p>
+                                              <p class="text-[9px] font-mono text-gray-500 uppercase tracking-wider">${student.class} | KURSI ${student.seatNumber}</p>
+                                            </div>
+                                            <div class="mt-4 pt-3 border-t border-gray-200 flex justify-between items-center">
+                                              <span class="text-[8px] font-mono text-gray-400">KODE: ${student.id.slice(0, 8).toUpperCase()}</span>
+                                              <span class="text-[9px] font-bold text-white px-3 py-1 bg-gray-900 rounded-lg tracking-widest">SAH</span>
                                             </div>
                                           </div>
-                                          <div class="space-y-1">
-                                            <p class="text-xs font-bold text-gray-800 truncate">Orang Tua dari ${student.name}</p>
-                                            <p class="text-[8px] font-mono text-green-700/60 uppercase tracking-wider">${student.class} | No. ${student.seatNumber}</p>
-                                          </div>
-                                          <div class="mt-4 pt-2 border-t border-green-200/50 flex justify-between items-center">
-                                            <span class="text-[8px] font-mono text-green-700/40">ID: ${student.id.slice(0, 12)}</span>
-                                            <span class="text-[8px] font-bold text-white px-2 py-1 bg-gray-800 rounded">VALID</span>
+                                          <div class="p-8 relative overflow-hidden">
+                                            <div class="absolute top-0 right-0 w-12 h-12 bg-yellow-600/5 rounded-bl-full"></div>
+                                            <div class="flex justify-between items-start mb-4">
+                                              <div>
+                                                <h5 class="text-[8px] font-mono text-yellow-700 uppercase tracking-widest font-bold mb-1">Voucher B</h5>
+                                                <h4 class="text-lg font-serif font-bold text-gray-900">ORANG TUA</h4>
+                                              </div>
+                                              <div class="w-10 h-10 bg-white rounded-lg border border-gray-100 shadow-sm flex items-center justify-center">
+                                                <span class="text-[10px] font-bold text-gray-300">QR</span>
+                                              </div>
+                                            </div>
+                                            <div class="space-y-1">
+                                              <p class="text-sm font-bold text-gray-800 truncate">Pendamping Wisudawan</p>
+                                              <p class="text-[9px] font-mono text-gray-500 uppercase tracking-wider">${student.class} | KURSI ${student.seatNumber}</p>
+                                            </div>
+                                            <div class="mt-4 pt-3 border-t border-gray-200 flex justify-between items-center">
+                                              <span class="text-[8px] font-mono text-gray-400">KODE: ${student.id.slice(0, 8).toUpperCase()}</span>
+                                              <span class="text-[9px] font-bold text-white px-3 py-1 bg-gray-900 rounded-lg tracking-widest">SAH</span>
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
@@ -1775,7 +2213,7 @@ export default function App() {
                         <TrendingUp className="w-3 h-3 text-green-600" />
                         Kehadiran
                       </h4>
-                      <span className="bg-green-50 text-green-700 text-[8px] font-black px-2 py-0.5 rounded-lg uppercase">Real-time</span>
+                      <span className="bg-green-50 text-green-700 text-[8px] font-black px-2 py-0.5 rounded-lg uppercase">Waktu Nyata</span>
                     </div>
                     <div className="flex-1 flex items-center justify-center relative">
                       <div className="w-full h-40">
@@ -2080,73 +2518,94 @@ export default function App() {
             {activeTab === 'users' && (
               <div className="p-6 md:p-10">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-                  <h3 className="text-xl font-serif font-bold">Daftar User Terotorisasi</h3>
+                  <div>
+                    <h3 className="text-2xl font-serif font-bold text-gray-900">Manajemen User</h3>
+                    <p className="text-sm text-gray-500 mt-1">Kelola akses admin dan staff untuk aplikasi ini.</p>
+                  </div>
                   <button 
-                    onClick={async () => {
-                      const email = prompt('Email User:');
-                      const role = prompt('Role (admin/staff):', 'staff');
-                      if (email && (role === 'admin' || role === 'staff')) {
-                        const { error } = await supabase
-                          .from('users')
-                          .upsert({ email, role });
-                        if (error) console.error("Error adding user:", error);
-                      } else if (email) {
-                        alert('Role tidak valid. Gunakan "admin" atau "staff".');
-                      }
+                    onClick={() => {
+                      setEditingUser({ email: '', role: 'staff', password: '' });
+                      setIsUserModalOpen(true);
                     }}
-                    className="w-full sm:w-auto bg-[#2e7d32] text-white px-6 py-2 rounded-full font-medium hover:bg-[#1b5e20] transition-all flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto bg-[#2e7d32] text-white px-6 py-3 rounded-2xl font-bold hover:bg-[#1b5e20] transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-900/10 active:scale-95"
                   >
-                    <UserPlus className="w-4 h-4" />
+                    <UserPlus className="w-5 h-5" />
                     Tambah User
                   </button>
                 </div>
 
-                <div className="overflow-x-auto -mx-6 md:mx-0">
-                  <div className="inline-block min-w-full align-middle px-6 md:px-0">
+                <div className="glass-card rounded-[32px] border border-white/20 shadow-xl overflow-hidden">
+                  <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="bg-gray-50 border-bottom border-gray-100">
-                          <th className="px-6 py-4 text-xs font-mono text-gray-400 uppercase tracking-wider">Email</th>
-                          <th className="px-6 py-4 text-xs font-mono text-gray-400 uppercase tracking-wider">Role</th>
-                          <th className="px-6 py-4 text-xs font-mono text-gray-400 uppercase tracking-wider text-right">Aksi</th>
+                        <tr className="bg-gray-50/50 border-b border-gray-100">
+                          <th className="px-8 py-5 text-xs font-mono text-gray-400 uppercase tracking-wider">Email User</th>
+                          <th className="px-8 py-5 text-xs font-mono text-gray-400 uppercase tracking-wider">Hak Akses</th>
+                          <th className="px-8 py-5 text-xs font-mono text-gray-400 uppercase tracking-wider text-right">Tindakan</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {appUsers.map((u) => (
+                        {/* Super Admin Row */}
+                        <tr className="bg-green-50/30">
+                          <td className="px-8 py-5">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-[#2e7d32] flex items-center justify-center text-white font-bold text-xs">A</div>
+                              <div>
+                                <p className="font-bold text-gray-900">ipg.gm2025@gmail.com</p>
+                                <p className="text-[10px] text-[#2e7d32] font-mono uppercase tracking-tighter">Super Admin</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-8 py-5">
+                            <span className="px-3 py-1 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 uppercase tracking-wider">
+                              ADMIN
+                            </span>
+                          </td>
+                          <td className="px-8 py-5 text-right">
+                            <span className="text-[10px] font-mono text-gray-400 uppercase italic">Sistem</span>
+                          </td>
+                        </tr>
+
+                        {appUsers.filter(u => u.email !== 'ipg.gm2025@gmail.com').map((u) => (
                           <tr key={u.email} className="hover:bg-gray-50/50 transition-colors group">
-                            <td className="px-6 py-4">
-                              <p className="font-medium text-gray-900 text-sm md:text-base">{u.email}</p>
+                            <td className="px-8 py-5">
+                              <p className="font-medium text-gray-900">{u.email}</p>
                             </td>
-                            <td className="px-6 py-4">
+                            <td className="px-8 py-5">
                               <span className={cn(
-                                "px-3 py-1 rounded-full text-[10px] md:text-xs font-medium",
+                                "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
                                 u.role === 'admin' ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
                               )}>
-                                {u.role.toUpperCase()}
+                                {u.role}
                               </span>
                             </td>
-                            <td className="px-6 py-4 text-right">
-                              <button 
-                                onClick={async () => {
-                                  if (confirm(`Hapus akses untuk ${u.email}?`)) {
-                                    const { error } = await supabase
-                                      .from('users')
-                                      .delete()
-                                      .eq('email', u.email);
-                                    if (error) console.error("Error deleting user:", error);
-                                  }
-                                }}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                            <td className="px-8 py-5 text-right">
+                              <div className="flex justify-end gap-2">
+                                <button 
+                                  onClick={() => {
+                                    setEditingUser({ ...u, password: '' });
+                                    setIsUserModalOpen(true);
+                                  }}
+                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                                  title="Edit Role"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button 
+                                  onClick={() => deleteUserFromDb(u.email)}
+                                  className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                                  title="Hapus Akses"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
                         {appUsers.length === 0 && (
                           <tr>
-                            <td colSpan={3} className="px-6 py-10 text-center text-gray-400 italic text-sm">
-                              Belum ada user tambahan. Admin utama: ipg.gm2025@gmail.com
+                            <td colSpan={3} className="px-8 py-12 text-center text-gray-400 italic">
+                              Belum ada user tambahan yang terdaftar.
                             </td>
                           </tr>
                         )}
@@ -2173,6 +2632,37 @@ export default function App() {
                         onChange={(e) => setSchoolName(e.target.value)}
                         className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none text-sm md:text-base"
                         placeholder="Contoh: SMK NEGERI 1 KOTA"
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Hari Pelaksanaan</label>
+                        <input 
+                          type="text" 
+                          value={eventDay}
+                          onChange={(e) => setEventDay(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none text-sm md:text-base"
+                          placeholder="Contoh: Senin"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Tanggal Pelaksanaan</label>
+                        <input 
+                          type="text" 
+                          value={eventDate}
+                          onChange={(e) => setEventDate(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none text-sm md:text-base"
+                          placeholder="Contoh: 15 Juni 2026"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Ucapan Undangan</label>
+                      <textarea 
+                        value={invitationMessage}
+                        onChange={(e) => setInvitationMessage(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none text-sm md:text-base h-24 resize-none"
+                        placeholder="Masukkan pesan undangan di sini..."
                       />
                     </div>
                     <div className="space-y-4">
@@ -2614,6 +3104,113 @@ export default function App() {
                       'Konfirmasi & Simpan'
                     ) : (
                       'Simpan Data'
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* User Management Modal */}
+          {isUserModalOpen && editingUser && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden flex flex-col"
+              >
+                <div className="p-8 border-b border-gray-100 flex justify-between items-center">
+                  <h3 className="text-2xl font-serif font-bold text-[#1a1a1a]">
+                    {appUsers.some(u => u.email === editingUser.email) ? 'Edit Hak Akses' : 'Tambah User Baru'}
+                  </h3>
+                  <button onClick={() => setIsUserModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                    <Minimize2 className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="p-8 space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Email User</label>
+                    <input 
+                      type="email" 
+                      disabled={appUsers.some(u => u.email === editingUser.email)}
+                      value={editingUser.email || ''}
+                      onChange={(e) => setEditingUser({...editingUser, email: e.target.value.toLowerCase()})}
+                      placeholder="contoh@gmail.com"
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none disabled:bg-gray-50 disabled:text-gray-400"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Password (Opsional)</label>
+                    <input 
+                      type="password" 
+                      value={editingUser.password || ''}
+                      onChange={(e) => setEditingUser({...editingUser, password: e.target.value})}
+                      placeholder={appUsers.some(u => u.email === editingUser.email) ? "Kosongkan jika tidak ingin ganti" : "Minimal 6 karakter"}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Role / Hak Akses</label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setEditingUser({...editingUser, role: 'admin'})}
+                        className={cn(
+                          "py-3 rounded-xl border font-bold transition-all flex flex-col items-center gap-1",
+                          editingUser.role === 'admin' 
+                            ? "bg-purple-600 border-purple-600 text-white shadow-lg shadow-purple-600/20" 
+                            : "border-gray-200 text-gray-500 hover:border-purple-200"
+                        )}
+                      >
+                        <span>ADMIN</span>
+                        <span className="text-[8px] font-normal opacity-80">Akses Penuh</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingUser({...editingUser, role: 'staff'})}
+                        className={cn(
+                          "py-3 rounded-xl border font-bold transition-all flex flex-col items-center gap-1",
+                          editingUser.role === 'staff' 
+                            ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-600/20" 
+                            : "border-gray-200 text-gray-500 hover:border-blue-200"
+                        )}
+                      >
+                        <span>STAFF</span>
+                        <span className="text-[8px] font-normal opacity-80">Akses Terbatas</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                    <p className="text-[10px] text-blue-700 leading-relaxed">
+                      <strong>Info:</strong> User dengan role <strong>Admin</strong> dapat mengelola data siswa, pengaturan sekolah, dan manajemen user. Role <strong>Staff</strong> hanya dapat mengelola data siswa dan pendaftaran.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-8 bg-gray-50 flex gap-4">
+                  <button 
+                    onClick={() => setIsUserModalOpen(false)}
+                    className="flex-1 px-6 py-4 rounded-full font-medium border border-gray-200 text-gray-600 hover:bg-gray-100 transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button 
+                    disabled={isSavingUser}
+                    onClick={saveUserToDb}
+                    className="flex-1 px-6 py-4 rounded-full font-medium bg-[#2e7d32] text-white hover:bg-[#1b5e20] transition-all shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSavingUser ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Menyimpan...
+                      </>
+                    ) : (
+                      'Simpan User'
                     )}
                   </button>
                 </div>
