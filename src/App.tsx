@@ -859,7 +859,7 @@ export default function App() {
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.3, duration: 1 }}
           >
-            <h3 className="text-lg sm:text-2xl lg:text-3xl font-serif font-bold tracking-[0.05em] leading-tight text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-4xl">{schoolName}</h3>
+            <h3 className="text-lg sm:text-2xl lg:text-3xl font-serif font-bold tracking-[0.05em] leading-tight text-white drop-shadow-[0_4px_15px_rgba(0,0,0,0.8)] max-w-4xl">{schoolName}</h3>
             <div className="flex items-center justify-center gap-3 mt-1 sm:mt-2">
               <div className="h-px w-6 sm:w-12 bg-gradient-to-r from-transparent to-white/40"></div>
               <p className="text-[10px] sm:text-xs lg:text-sm font-mono text-[#A5D6A7] uppercase tracking-[0.3em] font-bold">Acara Wisuda & Pelepasan</p>
@@ -937,7 +937,7 @@ export default function App() {
                       transition={{ delay: 0.2, duration: 0.6 }}
                     >
                       <h2 className="text-xs sm:text-lg font-mono text-[#A5D6A7] uppercase tracking-[0.2em] mb-1 font-bold drop-shadow-md">Wisudawan</h2>
-                      <h1 className="text-2xl sm:text-4xl lg:text-5xl xl:text-6xl font-serif font-bold leading-tight mb-3 bg-gradient-to-r from-white via-green-50 to-white bg-clip-text text-transparent bg-[length:200%_auto] animate-shimmer drop-shadow-2xl tracking-tight">
+                      <h1 className="text-2xl sm:text-4xl lg:text-5xl xl:text-6xl font-serif font-bold leading-tight mb-3 bg-gradient-to-r from-white via-white to-white bg-clip-text text-transparent drop-shadow-[0_10px_30px_rgba(0,0,0,0.6)] tracking-tight">
                         {currentStudent.name}
                       </h1>
                       <motion.div 
@@ -970,10 +970,10 @@ export default function App() {
                             <item.icon className="w-5 h-5 sm:w-6 sm:h-6" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-[8px] sm:text-[10px] font-mono text-white/40 uppercase tracking-widest mb-0.5 font-bold">{item.label}</p>
+                            <p className="text-[8px] sm:text-[10px] font-mono text-white/70 uppercase tracking-widest mb-0.5 font-bold drop-shadow-sm">{item.label}</p>
                             <p className={cn(
-                              "font-medium text-white leading-tight truncate",
-                              item.isSmall ? "text-sm sm:text-lg italic font-serif opacity-90" : "text-lg sm:text-2xl"
+                              "font-medium text-white leading-tight truncate drop-shadow-md",
+                              item.isSmall ? "text-sm sm:text-lg opacity-100" : "text-lg sm:text-2xl"
                             )}>
                               {item.value}
                             </p>
