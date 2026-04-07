@@ -96,7 +96,6 @@ const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,20 +105,11 @@ const Login = () => {
     setError(null);
     
     try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (error) throw error;
-        alert('Cek email Anda untuk konfirmasi pendaftaran!');
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
-      }
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan autentikasi');
     } finally {
@@ -137,9 +127,9 @@ const Login = () => {
         <div className="w-20 h-20 bg-[#2e7d32] rounded-full flex items-center justify-center mx-auto mb-8">
           <Users className="text-white w-10 h-10" />
         </div>
-        <h1 className="text-3xl font-serif font-bold text-[#1a1a1a] mb-4">Wisuda SMK</h1>
+        <h1 className="text-3xl font-serif font-bold text-[#1a1a1a] mb-4">SIM WISUDA</h1>
         <p className="text-gray-500 mb-8">
-          {isSignUp ? 'Buat akun baru untuk mengelola data.' : 'Masuk untuk mengelola data wisuda.'}
+          Sistem Informasi Manajemen Wisuda
         </p>
 
         <form onSubmit={handleAuth} className="space-y-4 text-left">
@@ -179,16 +169,9 @@ const Login = () => {
             disabled={loading}
             className="w-full gradient-btn text-white py-4 rounded-full font-medium transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
           >
-            {loading ? 'Memproses...' : (isSignUp ? 'Daftar Sekarang' : 'Masuk Sekarang')}
+            {loading ? 'Memproses...' : 'Masuk Sekarang'}
           </motion.button>
         </form>
-
-        <button 
-          onClick={() => setIsSignUp(!isSignUp)}
-          className="mt-6 text-sm text-gray-500 hover:text-[#2e7d32] transition-colors"
-        >
-          {isSignUp ? 'Sudah punya akun? Masuk di sini' : 'Belum punya akun? Daftar di sini'}
-        </button>
       </motion.div>
     </div>
   );
