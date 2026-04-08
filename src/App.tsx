@@ -2409,6 +2409,7 @@ export default function App() {
                     <table className="w-full text-left">
                       <thead>
                         <tr className="bg-gray-50/50">
+                          <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em] w-12">No.</th>
                           <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Wisudawan</th>
                           <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em] text-center hidden sm:table-cell">Gender</th>
                           <th className="px-6 py-4 text-xs font-black text-gray-400 uppercase tracking-[0.2em] hidden md:table-cell">Kelas</th>
@@ -2417,8 +2418,11 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {filteredStudents.map((student) => (
+                        {filteredStudents.map((student, index) => (
                           <tr key={student.id} className="hover:bg-green-50/30 transition-colors group">
+                            <td className="px-6 py-3">
+                              <span className="text-xs font-mono text-gray-400 font-bold">{index + 1}</span>
+                            </td>
                             <td className="px-6 py-3">
                               <div className="flex items-center gap-3">
                                 <div className="w-9 h-9 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-100 group-hover:border-green-200 transition-colors">
