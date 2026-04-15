@@ -5,7 +5,7 @@ import {
   Printer, QrCode, GraduationCap, MapPin,
   Maximize2, Minimize2, Trash2, Edit2, CheckCircle, UserPlus, Search,
   Grid, List as ListIcon, Camera, PieChart as PieChartIcon, BarChart as BarChartIcon, TrendingUp,
-  FileSpreadsheet, Download
+  FileSpreadsheet, Download, Trophy, Sparkles, ArrowRight, Calendar, Clock, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'sonner';
@@ -39,6 +39,15 @@ interface Student {
   seatNumber?: number;
   isCalled?: boolean;
   order?: number;
+}
+
+interface Speech {
+  id: string;
+  name: string;
+  position: string;
+  description: string;
+  photoUrl?: string;
+  order: number;
 }
 
 interface AppUser {
@@ -185,13 +194,20 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
-  const [view, setView] = useState<'admin' | 'projector'>('admin');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'list' | 'upload' | 'seating' | 'invitation' | 'registration' | 'users' | 'settings'>('dashboard');
-  const [schoolName, setSchoolName] = useState('SMK NEGERI 1 KOTA');
-  const [schoolLogo, setSchoolLogo] = useState('');
-  const [eventDay, setEventDay] = useState('Senin');
-  const [eventDate, setEventDate] = useState('15 Juni 2026');
-  const [invitationMessage, setInvitationMessage] = useState('Mengharap Kehadiran Anda Pada Acara Wisuda & Pelepasan Siswa-Siswi Kami.');
+  const [view, setView] = useState<'admin' | 'projector' | 'projector-speech'>('admin');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'list' | 'speeches' | 'upload' | 'seating' | 'invitation' | 'registration' | 'users' | 'settings'>('dashboard');
+  const [schoolName, setSchoolName] = useState(localStorage.getItem('schoolName') || 'SMK NEGERI 1 KOTA');
+  const [schoolLogo, setSchoolLogo] = useState(localStorage.getItem('schoolLogo') || '');
+  const [graduationTheme, setGraduationTheme] = useState(localStorage.getItem('graduationTheme') || 'Wisuda Purna Siswa');
+  const [eventDay, setEventDay] = useState(localStorage.getItem('eventDay') || 'Senin');
+  const [eventDate, setEventDate] = useState(localStorage.getItem('eventDate') || '15 Juni 2026');
+  const [eventLocation, setEventLocation] = useState(localStorage.getItem('eventLocation') || 'Gedung Serbaguna');
+  const [invitationMessage, setInvitationMessage] = useState(localStorage.getItem('invitationMessage') || 'Mengharap Kehadiran Anda Pada Acara Wisuda & Pelepasan Siswa-Siswi Kami.');
+  const [speeches, setSpeeches] = useState<Speech[]>([]);
+  const [isSpeechModalOpen, setIsSpeechModalOpen] = useState(false);
+  const [editingSpeech, setEditingSpeech] = useState<Partial<Speech> | null>(null);
+  const [isSavingSpeech, setIsSavingSpeech] = useState(false);
+  const [currentSpeechIndex, setCurrentSpeechIndex] = useState(0);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [currentStudentIndex, setCurrentStudentIndex] = useState(0);
@@ -261,6 +277,26 @@ export default function App() {
     localStorage.setItem('schoolLogo', schoolLogo);
   }, [schoolLogo]);
 
+  useEffect(() => {
+    localStorage.setItem('graduationTheme', graduationTheme);
+  }, [graduationTheme]);
+
+  useEffect(() => {
+    localStorage.setItem('eventDay', eventDay);
+  }, [eventDay]);
+
+  useEffect(() => {
+    localStorage.setItem('eventDate', eventDate);
+  }, [eventDate]);
+
+  useEffect(() => {
+    localStorage.setItem('eventLocation', eventLocation);
+  }, [eventLocation]);
+
+  useEffect(() => {
+    localStorage.setItem('invitationMessage', invitationMessage);
+  }, [invitationMessage]);
+
   const stats = useMemo(() => {
     const total = students.length;
     const registered = students.filter(s => s.isCalled).length;
@@ -296,6 +332,120 @@ export default function App() {
       console.error("Error fetching students:", error);
     } else {
       setStudents(data || []);
+    }
+  };
+
+  const fetchSpeeches = async () => {
+    const { data, error } = await supabase
+      .from('speeches')
+      .select('*')
+      .order('order', { ascending: true });
+    
+    if (error) {
+      console.error("Error fetching speeches:", error);
+    } else {
+      const mappedData = (data || []).map((s: any) => ({
+        ...s,
+        photoUrl: s.photo_url // Map snake_case from DB to camelCase for UI
+      }));
+      setSpeeches(mappedData);
+    }
+  };
+
+  const handleSpeechPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingSpeech) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Ukuran file terlalu besar! Maksimal 2MB.');
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('File harus berupa gambar (JPG, PNG, dll).');
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `speech-photos/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('photos')
+        .getPublicUrl(filePath);
+
+      setEditingSpeech({ ...editingSpeech, photoUrl: data.publicUrl });
+      toast.success('Foto berhasil diunggah!');
+    } catch (error: any) {
+      toast.error('Gagal mengunggah foto: ' + error.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const saveSpeech = async () => {
+    if (!editingSpeech?.name || !editingSpeech?.position) {
+      toast.error('Nama dan Jabatan wajib diisi!');
+      return;
+    }
+
+    setIsSavingSpeech(true);
+    try {
+      const speechData = {
+        name: editingSpeech.name,
+        position: editingSpeech.position,
+        description: editingSpeech.description,
+        photo_url: editingSpeech.photoUrl,
+        order: editingSpeech.order
+      };
+
+      if (editingSpeech.id) {
+        const { error } = await supabase
+          .from('speeches')
+          .update(speechData)
+          .eq('id', editingSpeech.id);
+        if (error) throw error;
+        toast.success('Data sambutan berhasil diperbarui!');
+      } else {
+        const nextOrder = Math.max(0, ...speeches.map(s => s.order || 0)) + 1;
+        const { error } = await supabase
+          .from('speeches')
+          .insert([{ ...speechData, order: nextOrder }]);
+        if (error) throw error;
+        toast.success('Data sambutan berhasil ditambahkan!');
+      }
+      setIsSpeechModalOpen(false);
+      fetchSpeeches();
+    } catch (error: any) {
+      toast.error('Gagal menyimpan data: ' + error.message);
+    } finally {
+      setIsSavingSpeech(false);
+    }
+  };
+
+  const deleteSpeech = async (id: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus data sambutan ini?')) return;
+    try {
+      const { error } = await supabase
+        .from('speeches')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      toast.success('Data sambutan berhasil dihapus!');
+      fetchSpeeches();
+    } catch (error: any) {
+      toast.error('Gagal menghapus data: ' + error.message);
     }
   };
 
@@ -493,7 +643,9 @@ export default function App() {
         setSchoolLogo(data.logo_url || '');
         setEventDay(data.event_day || 'Senin');
         setEventDate(data.event_date || '15 Juni 2026');
+        setEventLocation(data.event_location || 'Gedung Serbaguna');
         setInvitationMessage(data.invitation_message || 'Mengharap Kehadiran Anda Pada Acara Wisuda & Pelepasan Siswa-Siswi Kami.');
+        setGraduationTheme(data.graduation_theme || 'Mewujudkan Generasi Unggul dan Berkarakter');
       } else if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
         console.warn("Settings fetch error:", error);
       }
@@ -514,7 +666,9 @@ export default function App() {
           logo_url: schoolLogo,
           event_day: eventDay,
           event_date: eventDate,
+          event_location: eventLocation,
           invitation_message: invitationMessage,
+          graduation_theme: graduationTheme,
           updated_at: new Date().toISOString()
         });
 
@@ -534,12 +688,21 @@ export default function App() {
     fetchStudents();
     fetchUsers();
     fetchSettings();
+    fetchSpeeches();
 
     // Real-time subscription for students
     const studentChannel = supabase
       .channel('students_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
         fetchStudents();
+      })
+      .subscribe();
+
+    // Real-time subscription for speeches
+    const speechChannel = supabase
+      .channel('speeches_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'speeches' }, () => {
+        fetchSpeeches();
       })
       .subscribe();
 
@@ -561,6 +724,7 @@ export default function App() {
 
     return () => {
       supabase.removeChannel(studentChannel);
+      supabase.removeChannel(speechChannel);
       supabase.removeChannel(userChannel);
       supabase.removeChannel(settingsChannel);
     };
@@ -845,7 +1009,7 @@ export default function App() {
             <h3 className="text-lg sm:text-2xl lg:text-3xl font-serif font-bold tracking-[0.05em] leading-tight text-white drop-shadow-[0_4px_15px_rgba(0,0,0,0.8)] max-w-4xl">{schoolName}</h3>
             <div className="flex items-center justify-center gap-3 mt-1 sm:mt-2">
               <div className="h-px w-6 sm:w-12 bg-gradient-to-r from-transparent to-white/40"></div>
-              <p className="text-[10px] sm:text-xs lg:text-sm font-mono text-[#A5D6A7] uppercase tracking-[0.3em] font-bold">Acara Wisuda & Pelepasan</p>
+              <p className="text-[10px] sm:text-xs lg:text-sm font-mono text-[#A5D6A7] uppercase tracking-[0.3em] font-bold">{graduationTheme}</p>
               <div className="h-px w-6 sm:w-12 bg-gradient-to-l from-transparent to-white/40"></div>
             </div>
           </motion.div>
@@ -1019,6 +1183,183 @@ export default function App() {
     );
   }
 
+  if (view === 'projector-speech') {
+    const currentSpeech = speeches[currentSpeechIndex];
+    
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-[#0a2e0a] via-[#1b5e20] to-[#0a2e0a] text-white z-50 flex flex-col overflow-hidden">
+        {/* Decorative background elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <motion.div 
+            animate={{ 
+              scale: [1, 1.2, 1],
+              opacity: [0.1, 0.15, 0.1],
+              x: [0, 50, 0],
+              y: [0, -50, 0]
+            }}
+            transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute -top-[20%] -left-[10%] w-[60%] h-[60%] bg-green-500/20 rounded-full blur-[120px]"
+          />
+          <motion.div 
+            animate={{ 
+              scale: [1, 1.3, 1],
+              opacity: [0.05, 0.1, 0.05],
+              x: [0, -30, 0],
+              y: [0, 40, 0]
+            }}
+            transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] bg-yellow-500/10 rounded-full blur-[120px]"
+          />
+        </div>
+
+        {/* School Identity Section (Header) */}
+        <div className="relative z-10 pt-8 sm:pt-12 pb-4 flex flex-col items-center gap-2 sm:gap-4 text-center px-6 shrink-0">
+          <motion.div 
+            initial={{ y: -30, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            className="w-14 h-14 sm:w-20 sm:h-20 flex items-center justify-center overflow-hidden drop-shadow-[0_0_20px_rgba(34,197,94,0.3)] bg-white/5 p-1.5 rounded-xl backdrop-blur-sm border border-white/10"
+          >
+            {schoolLogo ? (
+              <img src={schoolLogo} className="w-full h-full object-contain" alt="Logo" />
+            ) : (
+              <Users className="w-10 h-10 text-white/30" />
+            )}
+          </motion.div>
+          <motion.div
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.3, duration: 1 }}
+          >
+            <h3 className="text-lg sm:text-2xl lg:text-3xl font-serif font-bold tracking-[0.05em] leading-tight text-white drop-shadow-[0_4px_15px_rgba(0,0,0,0.8)] max-w-4xl">{schoolName}</h3>
+            <div className="flex items-center justify-center gap-3 mt-1 sm:mt-2">
+              <div className="h-px w-6 sm:w-12 bg-gradient-to-r from-transparent to-white/40"></div>
+              <p className="text-[10px] sm:text-xs lg:text-sm font-mono text-[#A5D6A7] uppercase tracking-[0.3em] font-bold">{graduationTheme}</p>
+              <div className="h-px w-6 sm:w-12 bg-gradient-to-l from-transparent to-white/40"></div>
+            </div>
+          </motion.div>
+        </div>
+
+        <div className="absolute top-4 right-4 flex gap-4 no-print z-30">
+          <button onClick={() => setView('admin')} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors" title="Kembali ke Dashboard">
+            <Settings className="w-5 h-5" />
+          </button>
+          <button onClick={toggleFullscreen} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
+            {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+          </button>
+        </div>
+
+        {/* Main Content Area */}
+        <div className="flex-1 relative z-10 flex flex-col items-center justify-center px-6 sm:px-12 py-4 overflow-hidden">
+          <AnimatePresence mode="wait">
+            {currentSpeech ? (
+              <motion.div 
+                key={currentSpeech.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.1 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="w-full max-w-6xl flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-16"
+              >
+                {/* Photo Section */}
+                <div className="relative shrink-0">
+                  <motion.div 
+                    initial={{ x: -50, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: 0.5, duration: 1 }}
+                    className="w-48 h-60 sm:w-72 sm:h-96 lg:w-[400px] lg:h-[500px] rounded-[40px] overflow-hidden border-4 border-white/20 shadow-[0_30px_60px_rgba(0,0,0,0.5)] relative z-10"
+                  >
+                    {currentSpeech.photoUrl ? (
+                      <img 
+                        src={currentSpeech.photoUrl} 
+                        className="w-full h-full object-cover"
+                        alt={currentSpeech.name}
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-white/5 flex items-center justify-center">
+                        <Users className="w-24 h-24 text-white/10" />
+                      </div>
+                    )}
+                  </motion.div>
+                  {/* Decorative frame elements */}
+                  <div className="absolute -top-4 -left-4 w-24 h-24 border-t-4 border-l-4 border-yellow-500/40 rounded-tl-3xl z-0" />
+                  <div className="absolute -bottom-4 -right-4 w-24 h-24 border-b-4 border-r-4 border-yellow-500/40 rounded-br-3xl z-0" />
+                </div>
+
+                {/* Info Section */}
+                <div className="flex-1 text-center lg:text-left space-y-4 sm:space-y-8">
+                  <motion.div
+                    initial={{ y: 30, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.7, duration: 0.8 }}
+                  >
+                    <p className="text-yellow-400 font-mono text-xs sm:text-sm lg:text-base uppercase tracking-[0.4em] font-black mb-2 sm:mb-4 drop-shadow-md">SAMBUTAN OLEH</p>
+                    <h1 className="text-4xl sm:text-6xl lg:text-8xl font-serif font-black tracking-tight leading-none text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
+                      {currentSpeech.name}
+                    </h1>
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ y: 30, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.9, duration: 0.8 }}
+                    className="space-y-2 sm:space-y-4"
+                  >
+                    <h2 className="text-xl sm:text-3xl lg:text-5xl font-serif font-bold text-green-300 drop-shadow-md">
+                      {currentSpeech.position}
+                    </h2>
+                    <p className="text-sm sm:text-lg lg:text-2xl text-white/70 font-medium max-w-2xl leading-relaxed">
+                      {currentSpeech.description}
+                    </p>
+                  </motion.div>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="text-center space-y-6">
+                <Users className="w-24 h-24 text-white/10 mx-auto" />
+                <p className="text-2xl font-serif text-white/40 italic">Belum ada data sambutan yang dipilih</p>
+              </div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Footer Section */}
+        <div className="relative z-10 py-8 sm:py-12 px-12 shrink-0 flex flex-col items-center gap-6">
+          <div className="h-px w-full max-w-4xl bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+          <div className="flex items-center gap-8 sm:gap-16">
+            <div className="text-center">
+              <p className="text-[10px] sm:text-xs font-mono text-white/40 uppercase tracking-widest mb-1">Hari & Tanggal</p>
+              <p className="text-xs sm:text-sm lg:text-lg font-bold text-white/90">{eventDay}, {eventDate}</p>
+            </div>
+            <div className="w-px h-8 bg-white/10" />
+            <div className="text-center">
+              <p className="text-[10px] sm:text-xs font-mono text-white/40 uppercase tracking-widest mb-1">Lokasi Acara</p>
+              <p className="text-xs sm:text-sm lg:text-lg font-bold text-white/90">{eventLocation}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation Controls (Overlay) */}
+        <div className="absolute bottom-10 right-10 flex gap-4 no-print z-30">
+          <button 
+            onClick={() => setCurrentSpeechIndex(prev => Math.max(0, prev - 1))}
+            disabled={currentSpeechIndex === 0}
+            className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed group"
+          >
+            <ChevronLeft className="w-6 h-6 sm:w-8 sm:h-8 text-white group-hover:-translate-x-1 transition-transform" />
+          </button>
+          <button 
+            onClick={() => setCurrentSpeechIndex(prev => Math.min(speeches.length - 1, prev + 1))}
+            disabled={currentSpeechIndex === speeches.length - 1}
+            className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed group"
+          >
+            <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8 text-white group-hover:translate-x-1 transition-transform" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-[#F5F5F0] flex relative">
@@ -1084,6 +1425,7 @@ export default function App() {
               { id: 'seating', icon: Grid, label: 'Tempat Duduk' },
               { id: 'invitation', icon: Printer, label: 'Cetak Undangan' },
               { id: 'registration', icon: QrCode, label: 'Registrasi Ulang' },
+              { id: 'speeches', icon: MessageSquare, label: 'Sambutan' },
               { id: 'users', icon: UserPlus, label: 'Manajemen User', adminOnly: true },
               { id: 'settings', icon: Settings, label: 'Pengaturan Sekolah', adminOnly: true },
             ].map((tab) => {
@@ -1110,7 +1452,7 @@ export default function App() {
                 </button>
               );
             })}
-            <div className="pt-8 border-t border-white/10 mt-8">
+            <div className="pt-8 border-t border-white/10 mt-8 space-y-2">
               <button 
                 onClick={() => {
                   setView('projector');
@@ -1119,7 +1461,17 @@ export default function App() {
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/5 text-white hover:bg-white/10 transition-all border border-white/5"
               >
                 <Monitor className="w-5 h-5" />
-                <span>Tampilan Layar</span>
+                <span>Layar Wisudawan</span>
+              </button>
+              <button 
+                onClick={() => {
+                  setView('projector-speech');
+                  setIsSidebarOpen(false);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/5 text-white hover:bg-white/10 transition-all border border-white/5"
+              >
+                <MessageSquare className="w-5 h-5" />
+                <span>Layar Sambutan</span>
               </button>
             </div>
           </nav>
@@ -1168,6 +1520,7 @@ export default function App() {
                   {activeTab === 'seating' && "Pengaturan Tempat Duduk"}
                   {activeTab === 'invitation' && "Cetak Kartu Undangan"}
                   {activeTab === 'registration' && "Registrasi Ulang"}
+                  {activeTab === 'speeches' && "Manajemen Sambutan"}
                   {activeTab === 'users' && "Manajemen User"}
                   {activeTab === 'settings' && "Pengaturan Sekolah"}
                 </motion.h2>
@@ -1181,6 +1534,7 @@ export default function App() {
                    activeTab === 'settings' ? "Sesuaikan identitas sekolah Anda." : 
                    activeTab === 'invitation' ? "Cetak kartu undangan untuk wisudawan." :
                    activeTab === 'registration' ? "Kelola kehadiran wisudawan di lokasi." :
+                   activeTab === 'speeches' ? "Kelola daftar pemberi sambutan acara." :
                    "Kelola informasi wisudawan SMK Anda di sini."}
                 </motion.p>
               </div>
@@ -1228,67 +1582,129 @@ export default function App() {
 
             <div className="transition-all duration-500">
             {activeTab === 'dashboard' && (
-              <div className="space-y-8">
+              <div className="space-y-10 pb-10">
+                {/* Welcome Section */}
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="flex flex-col md:flex-row md:items-center justify-between gap-4"
+                >
+                  <div>
+                    <h2 className="text-3xl font-serif font-bold text-gray-900">Ringkasan Statistik</h2>
+                    <p className="text-gray-500 mt-1">Pantau perkembangan data wisudawan secara real-time.</p>
+                  </div>
+                  <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+                    <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center text-green-600">
+                      <Calendar className="w-5 h-5" />
+                    </div>
+                    <div className="pr-4">
+                      <p className="text-[10px] font-mono text-gray-400 uppercase font-bold leading-none">Hari Ini</p>
+                      <p className="text-sm font-bold text-gray-900">{new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                    </div>
+                  </div>
+                </motion.div>
+
                 {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                   {[
-                    { label: 'Total Siswa', value: stats.total, icon: Users, color: 'bg-blue-500' },
-                    { label: 'Sudah Hadir', value: stats.registered, icon: CheckCircle, color: 'bg-green-500' },
-                    { label: 'Belum Hadir', value: stats.unregistered, icon: Monitor, color: 'bg-orange-500' },
+                    { label: 'Total Wisudawan', value: stats.total, icon: Users, gradient: 'from-blue-600 to-indigo-600', shadow: 'shadow-blue-200', trend: '+12% dari kemarin' },
+                    { label: 'Sudah Registrasi', value: stats.registered, icon: CheckCircle, gradient: 'from-emerald-500 to-teal-600', shadow: 'shadow-emerald-200', trend: '85% tingkat kehadiran' },
+                    { label: 'Belum Registrasi', value: stats.unregistered, icon: Clock, gradient: 'from-orange-500 to-rose-500', shadow: 'shadow-orange-200', trend: 'Perlu tindak lanjut' },
                   ].map((stat, i) => (
                     <motion.div
                       key={stat.label}
-                      initial={{ opacity: 0, y: 20 }}
+                      initial={{ opacity: 0, y: 30 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      className="bg-white p-8 rounded-[32px] shadow-xl border border-gray-100 flex items-center gap-6 group hover:shadow-2xl transition-all duration-500"
+                      transition={{ delay: i * 0.1, duration: 0.5, ease: "easeOut" }}
+                      whileHover={{ y: -8, transition: { duration: 0.2 } }}
+                      className="relative bg-white p-8 rounded-[40px] shadow-xl border border-gray-100 group overflow-hidden"
                     >
-                      <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg", stat.color)}>
-                        <stat.icon className="w-8 h-8" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-mono text-gray-400 uppercase tracking-widest font-bold">{stat.label}</p>
-                        <p className="text-4xl font-serif font-bold text-gray-900 mt-1">{stat.value}</p>
+                      <div className={cn("absolute top-0 right-0 w-32 h-32 bg-gradient-to-br opacity-[0.03] rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-150 duration-700", stat.gradient)} />
+                      
+                      <div className="flex flex-col gap-6">
+                        <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-2xl bg-gradient-to-br transition-transform group-hover:rotate-6 duration-300", stat.gradient, stat.shadow)}>
+                          <stat.icon className="w-8 h-8" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-mono text-gray-400 uppercase tracking-[0.2em] font-black mb-1">{stat.label}</p>
+                          <div className="flex items-baseline gap-2">
+                            <p className="text-5xl font-serif font-bold text-gray-900 tracking-tight">{stat.value}</p>
+                            <span className="text-gray-400 text-sm font-medium">Siswa</span>
+                          </div>
+                          <div className="text-[10px] font-bold text-gray-400 mt-3 flex items-center gap-1.5 italic">
+                            <div className={cn("w-1.5 h-1.5 rounded-full", stat.gradient.split(' ')[0].replace('from-', 'bg-'))} />
+                            {stat.trend}
+                          </div>
+                        </div>
                       </div>
                     </motion.div>
                   ))}
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
                   {/* Major Distribution */}
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
+                    initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="lg:col-span-2 bg-white p-8 rounded-[32px] shadow-xl border border-gray-100"
+                    transition={{ delay: 0.3 }}
+                    className="lg:col-span-2 bg-white p-10 rounded-[48px] shadow-2xl border border-gray-50 relative overflow-hidden group"
                   >
-                    <div className="flex items-center justify-between mb-8">
-                      <h3 className="text-xl font-serif font-bold text-gray-900 flex items-center gap-3">
-                        <BarChartIcon className="w-6 h-6 text-[#2e7d32]" />
-                        Distribusi Jurusan
-                      </h3>
+                    <div className="absolute top-0 right-0 p-10 opacity-[0.02] pointer-events-none group-hover:scale-110 transition-transform duration-1000">
+                      <BarChartIcon className="w-64 h-64" />
                     </div>
-                    <div className="h-[350px] w-full">
+                    
+                    <div className="flex items-center justify-between mb-10 relative z-10">
+                      <div>
+                        <h3 className="text-2xl font-serif font-bold text-gray-900 flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center text-green-600">
+                            <BarChartIcon className="w-5 h-5" />
+                          </div>
+                          Distribusi Jurusan
+                        </h3>
+                        <p className="text-sm text-gray-400 mt-1 ml-13">Perbandingan jumlah wisudawan per kompetensi keahlian.</p>
+                      </div>
+                    </div>
+
+                    <div className="h-[400px] w-full relative z-10">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={stats.majorData} layout="vertical" margin={{ left: 40, right: 40 }}>
+                        <BarChart data={stats.majorData} layout="vertical" margin={{ left: 20, right: 60, top: 0, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="barGradient" x1="0" y1="0" x2="1" y2="0">
+                              <stop offset="0%" stopColor="#10b981" />
+                              <stop offset="100%" stopColor="#34d399" />
+                            </linearGradient>
+                          </defs>
                           <XAxis type="number" hide />
                           <YAxis 
                             dataKey="name" 
                             type="category" 
-                            width={100} 
-                            tick={{ fontSize: 12, fontWeight: 600 }}
+                            width={120} 
+                            tick={{ fontSize: 11, fontWeight: 700, fill: '#94a3b8' }}
                             axisLine={false}
                             tickLine={false}
                           />
                           <Tooltip 
-                            cursor={{ fill: 'transparent' }}
-                            contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
+                            cursor={{ fill: '#f8fafc', radius: 12 }}
+                            contentStyle={{ 
+                              borderRadius: '24px', 
+                              border: 'none', 
+                              boxShadow: '0 20px 50px rgba(0,0,0,0.1)',
+                              padding: '16px 20px'
+                            }}
                           />
                           <Bar 
                             dataKey="value" 
-                            fill="#2e7d32" 
-                            radius={[0, 10, 10, 0]} 
-                            barSize={30}
-                            label={{ position: 'right', fontSize: 12, fontWeight: 700, fill: '#666' }}
+                            fill="url(#barGradient)" 
+                            radius={[0, 20, 20, 0]} 
+                            barSize={32}
+                            animationDuration={1500}
+                            label={{ 
+                              position: 'right', 
+                              fontSize: 14, 
+                              fontWeight: 800, 
+                              fill: '#1e293b',
+                              formatter: (val: number) => `${val} Siswa`
+                            }}
                           />
                         </BarChart>
                       </ResponsiveContainer>
@@ -1297,114 +1713,170 @@ export default function App() {
 
                   {/* Top Students */}
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
+                    initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.2 }}
-                    className="bg-white p-8 rounded-[32px] shadow-xl border border-gray-100"
+                    transition={{ delay: 0.4 }}
+                    className="bg-white p-10 rounded-[48px] shadow-2xl border border-gray-50 relative overflow-hidden"
                   >
-                    <h3 className="text-xl font-serif font-bold text-gray-900 flex items-center gap-3 mb-8">
-                      <TrendingUp className="w-6 h-6 text-yellow-500" />
-                      Wisudawan Terbaik
-                    </h3>
-                    <div className="space-y-6">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/5 rounded-full blur-3xl -mr-16 -mt-16" />
+                    
+                    <div className="flex items-center justify-between mb-10">
+                      <h3 className="text-2xl font-serif font-bold text-gray-900 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-yellow-50 flex items-center justify-center text-yellow-600">
+                          <Trophy className="w-5 h-5" />
+                        </div>
+                        Lulusan Terbaik
+                      </h3>
+                    </div>
+
+                    <div className="space-y-5">
                       {students
                         .filter(s => s.grade)
                         .sort((a, b) => (b.grade || 0) - (a.grade || 0))
                         .slice(0, 5)
                         .map((student, idx) => (
-                          <div key={student.id} className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-600 font-bold">
+                          <motion.div 
+                            key={student.id}
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: 0.5 + (idx * 0.1) }}
+                            className="flex items-center gap-4 p-4 rounded-3xl hover:bg-gray-50 transition-colors group"
+                          >
+                            <div className={cn(
+                              "w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg transition-transform group-hover:scale-110",
+                              idx === 0 ? "bg-yellow-100 text-yellow-600 shadow-lg shadow-yellow-200" :
+                              idx === 1 ? "bg-slate-100 text-slate-500" :
+                              idx === 2 ? "bg-orange-50 text-orange-600" :
+                              "bg-gray-50 text-gray-400"
+                            )}>
                               {idx + 1}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="font-bold text-gray-900 truncate">{student.name}</p>
-                              <p className="text-xs text-gray-500 truncate">{student.major}</p>
+                              <p className="font-black text-gray-900 truncate text-sm">{student.name}</p>
+                              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate">{student.major}</p>
                             </div>
                             <div className="text-right">
-                              <p className="font-mono font-bold text-[#2e7d32]">{student.grade}</p>
-                              <p className="text-[10px] text-gray-400 uppercase font-bold">{student.predicate}</p>
+                              <p className="text-lg font-black text-green-600 leading-none">{student.grade}</p>
+                              <p className="text-[8px] text-gray-400 uppercase font-black tracking-tighter mt-1">{student.predicate}</p>
                             </div>
-                          </div>
+                          </motion.div>
                         ))}
                       {students.filter(s => s.grade).length === 0 && (
-                        <div className="text-center py-12 text-gray-400 italic">Belum ada data nilai</div>
+                        <div className="flex flex-col items-center justify-center py-20 text-center">
+                          <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                            <Users className="w-8 h-8 text-gray-200" />
+                          </div>
+                          <p className="text-gray-400 font-bold text-sm">Belum ada data nilai</p>
+                        </div>
                       )}
                     </div>
                   </motion.div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                   {/* Gender Distribution */}
                   <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.2 }}
-                    className="bg-white p-8 rounded-[32px] shadow-xl border border-gray-100"
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5 }}
+                    className="bg-white p-10 rounded-[48px] shadow-2xl border border-gray-50"
                   >
-                    <div className="flex items-center justify-between mb-8">
-                      <h3 className="text-xl font-serif font-bold text-gray-900 flex items-center gap-3">
-                        <PieChartIcon className="w-6 h-6 text-[#2e7d32]" />
+                    <div className="flex items-center justify-between mb-10">
+                      <h3 className="text-2xl font-serif font-bold text-gray-900 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                          <PieChartIcon className="w-5 h-5" />
+                        </div>
                         Distribusi Gender
                       </h3>
                     </div>
-                    <div className="h-[350px] w-full flex items-center justify-center">
+                    <div className="h-[380px] w-full flex items-center justify-center relative">
                       {stats.genderData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={stats.genderData}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={80}
-                              outerRadius={120}
-                              paddingAngle={8}
-                              dataKey="value"
-                            >
-                              <Cell fill="#3b82f6" />
-                              <Cell fill="#ec4899" />
-                            </Pie>
-                            <Tooltip 
-                              contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
-                            />
-                            <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                          </PieChart>
-                        </ResponsiveContainer>
+                        <>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <p className="text-4xl font-serif font-black text-gray-900">{stats.total}</p>
+                            <p className="text-[10px] font-mono text-gray-400 uppercase font-bold tracking-widest">Total Siswa</p>
+                          </div>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={stats.genderData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={100}
+                                outerRadius={140}
+                                paddingAngle={10}
+                                dataKey="value"
+                                animationDuration={1500}
+                              >
+                                <Cell fill="#3b82f6" stroke="none" />
+                                <Cell fill="#f472b6" stroke="none" />
+                              </Pie>
+                              <Legend 
+                                verticalAlign="bottom" 
+                                height={36} 
+                                iconType="circle"
+                                formatter={(value) => {
+                                  const count = stats.genderData.find(d => d.name === value)?.value || 0;
+                                  return (
+                                    <span className="text-sm font-bold text-gray-700 ml-2">
+                                      {value}: <span className="text-green-600 font-black">{count}</span>
+                                    </span>
+                                  );
+                                }}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </>
                       ) : (
-                        <div className="text-gray-400 font-medium">Belum ada data gender</div>
+                        <div className="text-gray-400 font-bold">Belum ada data gender</div>
                       )}
                     </div>
                   </motion.div>
-                </div>
 
-                {/* Recent Activity / Quick Actions */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
-                  className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] p-10 rounded-[40px] text-white shadow-2xl relative overflow-hidden"
-                >
-                  <div className="absolute top-0 right-0 w-96 h-96 bg-green-500/10 rounded-full blur-[100px] -mr-48 -mt-48" />
-                  <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
-                    <div className="space-y-4 text-center md:text-left">
-                      <h3 className="text-3xl font-serif font-bold">Siap untuk Wisuda?</h3>
-                      <p className="text-gray-400 max-w-md">Kelola data wisudawan dengan mudah. Mulai dari unggah data hingga pengaturan tempat duduk dan registrasi ulang.</p>
+                  {/* Quick Actions / Banner */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.6 }}
+                    className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] p-12 rounded-[48px] text-white shadow-2xl relative overflow-hidden group"
+                  >
+                    <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-500/10 rounded-full blur-[120px] -mr-64 -mt-64 group-hover:bg-green-500/20 transition-colors duration-1000" />
+                    <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full blur-[100px] -ml-32 -mb-32" />
+                    
+                    <div className="relative z-10 h-full flex flex-col justify-between gap-12">
+                      <div className="space-y-6">
+                        <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-xl flex items-center justify-center border border-white/10">
+                          <Sparkles className="w-8 h-8 text-yellow-400" />
+                        </div>
+                        <h3 className="text-4xl font-serif font-bold leading-tight">Siap Melaksanakan Wisuda?</h3>
+                        <p className="text-gray-400 text-lg leading-relaxed max-w-md">
+                          Semua data sudah siap. Pastikan untuk memeriksa kembali daftar hadir dan pengaturan tempat duduk sebelum acara dimulai.
+                        </p>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-4">
+                        <motion.button 
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setActiveTab('registration')}
+                          className="px-10 py-5 bg-green-600 text-white rounded-[24px] font-black uppercase tracking-widest text-xs hover:bg-green-500 transition-all shadow-xl shadow-green-900/40 flex items-center gap-3"
+                        >
+                          Mulai Registrasi
+                          <ArrowRight className="w-4 h-4" />
+                        </motion.button>
+                        <motion.button 
+                          whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.15)' }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setView('projector')}
+                          className="px-10 py-5 bg-white/10 backdrop-blur-md text-white rounded-[24px] font-black uppercase tracking-widest text-xs border border-white/10 transition-all flex items-center gap-3"
+                        >
+                          Buka Layar Proyektor
+                          <Monitor className="w-4 h-4" />
+                        </motion.button>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap justify-center gap-4">
-                      <button 
-                        onClick={() => setActiveTab('list')}
-                        className="px-8 py-4 bg-white text-black rounded-2xl font-bold hover:bg-gray-100 transition-all active:scale-95"
-                      >
-                        Lihat Data Siswa
-                      </button>
-                      <button 
-                        onClick={() => setActiveTab('registration')}
-                        className="px-8 py-4 bg-green-600 text-white rounded-2xl font-bold hover:bg-green-700 transition-all active:scale-95 border border-green-500/30"
-                      >
-                        Mulai Registrasi
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
+                  </motion.div>
+                </div>
               </div>
             )}
 
@@ -2502,6 +2974,88 @@ export default function App() {
               </div>
             )}
 
+            {activeTab === 'speeches' && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <h3 className="text-2xl font-serif font-bold text-gray-900">Manajemen Sambutan</h3>
+                    <p className="text-sm text-gray-500 mt-1">Kelola daftar pemberi sambutan dan urutannya.</p>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setEditingSpeech({
+                        name: '',
+                        position: '',
+                        description: '',
+                        photoUrl: '',
+                        order: speeches.length + 1
+                      });
+                      setIsSpeechModalOpen(true);
+                    }}
+                    className="w-full sm:w-auto bg-[#2e7d32] text-white px-6 py-3 rounded-2xl font-bold hover:bg-[#1b5e20] transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-900/10 active:scale-95"
+                  >
+                    <UserPlus className="w-5 h-5" />
+                    Tambah Sambutan
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {speeches.map((speech, index) => (
+                    <motion.div
+                      key={speech.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                      className="bg-white rounded-[32px] border border-gray-100 shadow-xl overflow-hidden group hover:shadow-2xl transition-all duration-300"
+                    >
+                      <div className="aspect-[4/3] relative overflow-hidden">
+                        {speech.photoUrl ? (
+                          <img src={speech.photoUrl} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={speech.name} />
+                        ) : (
+                          <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                            <Users className="w-12 h-12 text-gray-300" />
+                          </div>
+                        )}
+                        <div className="absolute top-4 right-4 flex gap-2">
+                          <button 
+                            onClick={() => {
+                              setEditingSpeech(speech);
+                              setIsSpeechModalOpen(true);
+                            }}
+                            className="p-2 bg-white/90 backdrop-blur-sm rounded-xl text-blue-600 shadow-lg hover:bg-blue-600 hover:text-white transition-all"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => deleteSpeech(speech.id)}
+                            className="p-2 bg-white/90 backdrop-blur-sm rounded-xl text-red-600 shadow-lg hover:bg-red-600 hover:text-white transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="absolute bottom-4 left-4">
+                          <span className="px-3 py-1 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold rounded-full border border-white/20">
+                            Urutan: {speech.order}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-6">
+                        <h4 className="text-lg font-bold text-gray-900 leading-tight mb-1">{speech.name}</h4>
+                        <p className="text-sm font-bold text-green-600 mb-3">{speech.position}</p>
+                        <p className="text-xs text-gray-500 line-clamp-3 leading-relaxed">{speech.description}</p>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {speeches.length === 0 && (
+                    <div className="col-span-full py-20 text-center bg-white rounded-[40px] border-2 border-dashed border-gray-200">
+                      <MessageSquare className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+                      <p className="text-gray-400 font-medium italic">Belum ada data sambutan.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {activeTab === 'users' && (
               <div className="p-6 md:p-10">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
@@ -2621,6 +3175,16 @@ export default function App() {
                         placeholder="Contoh: SMK NEGERI 1 KOTA"
                       />
                     </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Tema Acara Wisuda</label>
+                      <input 
+                        type="text" 
+                        value={graduationTheme}
+                        onChange={(e) => setGraduationTheme(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none text-sm md:text-base"
+                        placeholder="Contoh: Mewujudkan Generasi Unggul dan Berkarakter"
+                      />
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       <div className="space-y-2">
                         <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Hari Pelaksanaan</label>
@@ -2642,6 +3206,16 @@ export default function App() {
                           placeholder="Contoh: 15 Juni 2026"
                         />
                       </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Lokasi Acara</label>
+                      <input 
+                        type="text" 
+                        value={eventLocation}
+                        onChange={(e) => setEventLocation(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none text-sm md:text-base"
+                        placeholder="Contoh: Gedung Serbaguna Utama"
+                      />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Ucapan Undangan</label>
@@ -2731,6 +3305,128 @@ export default function App() {
           </div>
         </div>
       </main>
+
+        {/* Speech Form Modal */}
+        <AnimatePresence>
+          {isSpeechModalOpen && editingSpeech && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+              >
+                <div className="p-8 border-b border-gray-100 flex justify-between items-center">
+                  <h3 className="text-2xl font-serif font-bold text-[#1a1a1a]">
+                    {editingSpeech.id ? 'Edit Data Sambutan' : 'Tambah Sambutan Baru'}
+                  </h3>
+                  <button onClick={() => setIsSpeechModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                    <Minimize2 className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="p-8 overflow-y-auto flex-1 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Nama Lengkap</label>
+                      <input 
+                        type="text" 
+                        value={editingSpeech.name || ''}
+                        onChange={(e) => setEditingSpeech({...editingSpeech, name: e.target.value})}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Jabatan</label>
+                      <input 
+                        type="text" 
+                        value={editingSpeech.position || ''}
+                        onChange={(e) => setEditingSpeech({...editingSpeech, position: e.target.value})}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none"
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Keterangan / Sambutan Singkat</label>
+                      <textarea 
+                        value={editingSpeech.description || ''}
+                        onChange={(e) => setEditingSpeech({...editingSpeech, description: e.target.value})}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none h-24 resize-none"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Urutan Tampil</label>
+                      <input 
+                        type="number" 
+                        value={editingSpeech.order || ''}
+                        onChange={(e) => setEditingSpeech({...editingSpeech, order: Number(e.target.value)})}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Foto Pemberi Sambutan</label>
+                      <div className="flex gap-4 items-center">
+                        <div className="w-24 h-24 bg-gray-100 rounded-2xl overflow-hidden border-2 border-dashed border-gray-200 flex items-center justify-center relative group">
+                          {editingSpeech.photoUrl ? (
+                            <img src={editingSpeech.photoUrl} className="w-full h-full object-cover" alt="" />
+                          ) : (
+                            <Camera className="w-8 h-8 text-gray-300" />
+                          )}
+                          {isUploading && (
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 space-y-2">
+                          <input 
+                            type="file" 
+                            id="speech-photo-upload"
+                            accept="image/*"
+                            onChange={handleSpeechPhotoUpload}
+                            className="hidden"
+                          />
+                          <label 
+                            htmlFor="speech-photo-upload"
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl cursor-pointer transition-all text-sm font-medium"
+                          >
+                            <Upload className="w-4 h-4" />
+                            {editingSpeech.photoUrl ? 'Ganti Foto' : 'Unggah Foto'}
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-8 bg-gray-50 flex justify-end gap-4">
+                  <button 
+                    onClick={() => setIsSpeechModalOpen(false)}
+                    className="px-8 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button 
+                    onClick={saveSpeech}
+                    disabled={isSavingSpeech}
+                    className="px-8 py-3 bg-[#2e7d32] text-white rounded-xl font-bold hover:bg-[#1b5e20] transition-all shadow-lg shadow-green-900/10 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {isSavingSpeech ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Menyimpan...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-5 h-5" />
+                        Simpan Sambutan
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         {/* Student Form Modal */}
         <AnimatePresence>
