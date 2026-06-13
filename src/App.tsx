@@ -50,6 +50,15 @@ interface Speech {
   order: number;
 }
 
+interface Performance {
+  id: string;
+  title: string;
+  performer: string;
+  description: string;
+  photoUrl?: string;
+  order: number;
+}
+
 interface AppUser {
   email: string;
   role: 'admin' | 'staff';
@@ -194,8 +203,9 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
-  const [view, setView] = useState<'admin' | 'projector' | 'projector-speech'>('admin');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'list' | 'speeches' | 'upload' | 'seating' | 'invitation' | 'registration' | 'users' | 'settings'>('dashboard');
+  const [view, setView] = useState<'admin' | 'projector' | 'projector-speech' | 'projector-performance' | 'projector-best-graduates'>('admin');
+  const [currentBestIndex, setCurrentBestIndex] = useState(0);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'list' | 'speeches' | 'performances' | 'upload' | 'seating' | 'invitation' | 'registration' | 'users' | 'settings'>('dashboard');
   const [schoolName, setSchoolName] = useState(localStorage.getItem('schoolName') || 'SMK NEGERI 1 KOTA');
   const [schoolLogo, setSchoolLogo] = useState(localStorage.getItem('schoolLogo') || '');
   const [graduationTheme, setGraduationTheme] = useState(localStorage.getItem('graduationTheme') || 'Wisuda Purna Siswa');
@@ -208,6 +218,11 @@ export default function App() {
   const [editingSpeech, setEditingSpeech] = useState<Partial<Speech> | null>(null);
   const [isSavingSpeech, setIsSavingSpeech] = useState(false);
   const [currentSpeechIndex, setCurrentSpeechIndex] = useState(0);
+  const [performances, setPerformances] = useState<Performance[]>([]);
+  const [isPerformanceModalOpen, setIsPerformanceModalOpen] = useState(false);
+  const [editingPerformance, setEditingPerformance] = useState<Partial<Performance> | null>(null);
+  const [isSavingPerformance, setIsSavingPerformance] = useState(false);
+  const [currentPerformanceIndex, setCurrentPerformanceIndex] = useState(0);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [currentStudentIndex, setCurrentStudentIndex] = useState(0);
@@ -444,6 +459,120 @@ export default function App() {
       if (error) throw error;
       toast.success('Data sambutan berhasil dihapus!');
       fetchSpeeches();
+    } catch (error: any) {
+      toast.error('Gagal menghapus data: ' + error.message);
+    }
+  };
+
+  const fetchPerformances = async () => {
+    const { data, error } = await supabase
+      .from('performances')
+      .select('*')
+      .order('order', { ascending: true });
+    
+    if (error) {
+      console.error("Error fetching performances:", error);
+    } else {
+      const mappedData = (data || []).map((p: any) => ({
+        ...p,
+        photoUrl: p.photo_url // Map snake_case from DB to camelCase for UI
+      }));
+      setPerformances(mappedData);
+    }
+  };
+
+  const handlePerformancePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editingPerformance) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Ukuran file terlalu besar! Maksimal 2MB.');
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('File harus berupa gambar (JPG, PNG, dll).');
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `performance-photos/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('photos')
+        .getPublicUrl(filePath);
+
+      setEditingPerformance({ ...editingPerformance, photoUrl: data.publicUrl });
+      toast.success('Foto berhasil diunggah!');
+    } catch (error: any) {
+      toast.error('Gagal mengunggah foto: ' + error.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const savePerformance = async () => {
+    if (!editingPerformance?.title || !editingPerformance?.performer) {
+      toast.error('Acara dan Pengisi Acara wajib diisi!');
+      return;
+    }
+
+    setIsSavingPerformance(true);
+    try {
+      const performanceData = {
+        title: editingPerformance.title,
+        performer: editingPerformance.performer,
+        description: editingPerformance.description || '',
+        photo_url: editingPerformance.photoUrl || '',
+        order: editingPerformance.order
+      };
+
+      if (editingPerformance.id) {
+        const { error } = await supabase
+          .from('performances')
+          .update(performanceData)
+          .eq('id', editingPerformance.id);
+        if (error) throw error;
+        toast.success('Data penampilan berhasil diperbarui!');
+      } else {
+        const nextOrder = Math.max(0, ...performances.map(p => p.order || 0)) + 1;
+        const { error } = await supabase
+          .from('performances')
+          .insert([{ ...performanceData, order: nextOrder }]);
+        if (error) throw error;
+        toast.success('Data penampilan berhasil ditambahkan!');
+      }
+      setIsPerformanceModalOpen(false);
+      fetchPerformances();
+    } catch (error: any) {
+      toast.error('Gagal menyimpan data: ' + error.message);
+    } finally {
+      setIsSavingPerformance(false);
+    }
+  };
+
+  const deletePerformance = async (id: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus data penampilan ini?')) return;
+    try {
+      const { error } = await supabase
+        .from('performances')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      toast.success('Data penampilan berhasil dihapus!');
+      fetchPerformances();
     } catch (error: any) {
       toast.error('Gagal menghapus data: ' + error.message);
     }
@@ -689,6 +818,7 @@ export default function App() {
     fetchUsers();
     fetchSettings();
     fetchSpeeches();
+    fetchPerformances();
 
     // Real-time subscription for students
     const studentChannel = supabase
@@ -703,6 +833,14 @@ export default function App() {
       .channel('speeches_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'speeches' }, () => {
         fetchSpeeches();
+      })
+      .subscribe();
+
+    // Real-time subscription for performances
+    const performanceChannel = supabase
+      .channel('performances_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'performances' }, () => {
+        fetchPerformances();
       })
       .subscribe();
 
@@ -725,6 +863,7 @@ export default function App() {
     return () => {
       supabase.removeChannel(studentChannel);
       supabase.removeChannel(speechChannel);
+      supabase.removeChannel(performanceChannel);
       supabase.removeChannel(userChannel);
       supabase.removeChannel(settingsChannel);
     };
@@ -791,6 +930,29 @@ export default function App() {
       for (const row of results) {
         if (!row.name) continue;
         
+        let id = row.id;
+        const formattedNisn = row.nisn ? String(row.nisn).padStart(10, '0') : '';
+        
+        // Try to match existing student if ID is missing
+        if (!id && formattedNisn) {
+          const existing = students.find(s => s.nisn === formattedNisn);
+          if (existing) {
+            id = existing.id;
+            // If updating, preserve existing values for missing columns
+            row.class = row.class || existing.class;
+            row.major = row.major || existing.major;
+            row.gender = row.gender || existing.gender;
+            row.grade = row.grade !== undefined ? row.grade : existing.grade;
+            row.predicate = row.predicate || existing.predicate;
+            row.achievement = row.achievement || existing.achievement;
+            row.parentName = row.parentName || existing.parentName;
+            row.address = row.address || existing.address;
+            row.photoUrl = row.photoUrl || existing.photoUrl;
+            row.seatNumber = row.seatNumber !== undefined ? row.seatNumber : existing.seatNumber;
+            row.order = row.order !== undefined ? row.order : existing.order;
+          }
+        }
+
         let major = row.major || '';
         const cls = row.class || '';
         
@@ -803,7 +965,7 @@ export default function App() {
 
         if (!major) continue; // Still need a major at the end
 
-        const id = row.id || Math.random().toString(36).substring(7);
+        if (!id) id = Math.random().toString(36).substring(7);
         const gradeVal = Number(row.grade) || 0;
         let autoPredicate = row.predicate || 'Kurang';
         if (!row.predicate) {
@@ -813,7 +975,7 @@ export default function App() {
         }
 
         const seatNum = Number(row.seatNumber) || nextOrder;
-        if (!row.seatNumber) nextOrder++;
+        if (!row.seatNumber && !row.id) nextOrder++; // Only increment if it's truly new
 
         const gender = row.gender === 'L' || row.gender === 'P' ? row.gender : undefined;
 
@@ -823,7 +985,7 @@ export default function App() {
             .upsert({
               id: id,
               name: (row.name || '').toUpperCase(),
-              nisn: row.nisn ? String(row.nisn).padStart(10, '0') : '',
+              nisn: formattedNisn,
               class: cls,
               major: major,
               gender: gender,
@@ -835,7 +997,7 @@ export default function App() {
               photoUrl: row.photoUrl || '',
               seatNumber: seatNum,
               isCalled: false,
-              order: seatNum
+              order: row.order || seatNum
             });
           if (error) throw error;
         } catch (error) {
@@ -929,6 +1091,22 @@ export default function App() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template Wisuda");
     XLSX.writeFile(wb, "Template_Data_Wisuda_SMK.xlsx");
+  };
+
+  const downloadParentTemplate = () => {
+    const headers = [
+      {
+        name: 'Budi Santoso',
+        nisn: '1234567890',
+        parentName: 'Slamet',
+        address: 'Jl. Merdeka No. 123, Jakarta'
+      }
+    ];
+    
+    const ws = XLSX.utils.json_to_sheet(headers);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template Ortu & Alamat");
+    XLSX.writeFile(wb, "Template_Data_OrangTua_Alamat.xlsx");
   };
 
   if (!isAuthReady) return <div className="min-h-screen flex items-center justify-center">Memuat...</div>;
@@ -1083,7 +1261,14 @@ export default function App() {
                       animate={{ y: 0, opacity: 1 }}
                       transition={{ delay: 0.2, duration: 0.6 }}
                     >
-                      <h2 className="text-xs sm:text-lg font-mono text-[#A5D6A7] uppercase tracking-[0.2em] mb-1 font-bold drop-shadow-md">Wisudawan</h2>
+                      {currentStudent.achievement?.includes('[LULUSAN TERBAIK]') ? (
+                        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/20 border border-yellow-500/40 mb-3 drop-shadow-[0_0_15px_rgba(234,179,8,0.3)] animate-pulse">
+                          <Trophy className="w-5 h-5 text-yellow-400 animate-bounce" />
+                          <p className="text-yellow-350 font-mono text-xs sm:text-sm uppercase tracking-[0.25em] font-black drop-shadow-md">🏆 LULUSAN TERBAIK 🏆</p>
+                        </div>
+                      ) : (
+                        <h2 className="text-xs sm:text-lg font-mono text-[#A5D6A7] uppercase tracking-[0.2em] mb-1 font-bold drop-shadow-md">Wisudawan</h2>
+                      )}
                       <h1 className="text-2xl sm:text-4xl lg:text-5xl xl:text-6xl font-serif font-bold leading-tight mb-3 bg-gradient-to-r from-white via-white to-white bg-clip-text text-transparent drop-shadow-[0_10px_30px_rgba(0,0,0,0.6)] tracking-tight">
                         {currentStudent.name}
                       </h1>
@@ -1101,32 +1286,52 @@ export default function App() {
                       transition={{ delay: 0.4, duration: 0.5 }}
                       className="space-y-4 sm:space-y-5"
                     >
-                      {[
-                        { label: 'Kelas', value: currentStudent.class || '-', icon: GraduationCap, color: 'text-blue-400' },
-                        { label: 'Orang Tua / Wali', value: currentStudent.parentName || '-', icon: Users, color: 'text-green-400' },
-                        { label: 'Alamat', value: currentStudent.address || '-', icon: MapPin, color: 'text-yellow-400', isSmall: true }
-                      ].map((item, index) => (
-                        <motion.div 
-                          key={item.label}
-                          initial={{ x: 30, opacity: 0 }}
-                          animate={{ x: 0, opacity: 1 }}
-                          transition={{ delay: 0.5 + (index * 0.1) }}
-                          className="flex items-start gap-4 sm:gap-5 bg-white/5 p-4 sm:p-5 rounded-[24px] border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all duration-300 group"
-                        >
-                          <div className={cn("w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/5 flex items-center justify-center shadow-inner border border-white/5 group-hover:scale-110 transition-transform shrink-0", item.color)}>
-                            <item.icon className="w-5 h-5 sm:w-6 sm:h-6" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[8px] sm:text-[10px] font-mono text-white/70 uppercase tracking-widest mb-0.5 font-bold drop-shadow-sm">{item.label}</p>
-                            <p className={cn(
-                              "font-medium text-white leading-tight truncate drop-shadow-md",
-                              item.isSmall ? "text-sm sm:text-lg opacity-100" : "text-lg sm:text-2xl"
-                            )}>
-                              {item.value}
-                            </p>
-                          </div>
-                        </motion.div>
-                      ))}
+                      {(() => {
+                        interface ProjectorItem {
+                          label: string;
+                          value: string;
+                          icon: typeof GraduationCap;
+                          color: string;
+                          isSmall?: boolean;
+                        }
+                        
+                        const items: ProjectorItem[] = [
+                          { label: 'Kelas', value: currentStudent.class || '-', icon: GraduationCap, color: 'text-blue-400' }
+                        ];
+                        
+                        const actualAch = currentStudent.achievement ? currentStudent.achievement.replace('[LULUSAN TERBAIK]', '').trim() : '';
+                        if (actualAch) {
+                          items.push({ label: 'Prestasi / Penghargaan', value: actualAch, icon: Trophy, color: 'text-yellow-400' });
+                        }
+                        
+                        items.push(
+                          { label: 'Orang Tua / Wali', value: currentStudent.parentName || '-', icon: Users, color: 'text-green-400' },
+                          { label: 'Alamat', value: currentStudent.address || '-', icon: MapPin, color: 'text-yellow-400', isSmall: true }
+                        );
+                        
+                        return items.map((item, index) => (
+                          <motion.div 
+                            key={item.label}
+                            initial={{ x: 30, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            transition={{ delay: 0.5 + (index * 0.1) }}
+                            className="flex items-start gap-4 sm:gap-5 bg-white/5 p-4 sm:p-5 rounded-[24px] border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all duration-300 group"
+                          >
+                            <div className={cn("w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/5 flex items-center justify-center shadow-inner border border-white/5 group-hover:scale-110 transition-transform shrink-0", item.color)}>
+                              <item.icon className="w-5 h-5 sm:w-6 sm:h-6" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[8px] sm:text-[10px] font-mono text-white/70 uppercase tracking-widest mb-0.5 font-bold drop-shadow-sm">{item.label}</p>
+                              <p className={cn(
+                                "font-medium text-white leading-tight truncate drop-shadow-md",
+                                item.isSmall ? "text-sm sm:text-lg opacity-100" : "text-lg sm:text-2xl"
+                              )}>
+                                {item.value}
+                              </p>
+                            </div>
+                          </motion.div>
+                        ));
+                      })()}
                     </motion.div>
                   </div>
                 </div>
@@ -1360,6 +1565,574 @@ export default function App() {
     );
   }
 
+  if (view === 'projector-performance') {
+    const currentPerformance = performances[currentPerformanceIndex];
+    
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-[#0a2e0a] via-[#1b5e20] to-[#0a2e0a] text-white z-50 flex flex-col overflow-hidden">
+        {/* Decorative background elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <motion.div 
+            animate={{ 
+              scale: [1, 1.2, 1],
+              opacity: [0.1, 0.15, 0.1],
+              x: [0, 50, 0],
+              y: [0, -50, 0]
+            }}
+            transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute -top-[20%] -left-[10%] w-[60%] h-[60%] bg-green-500/20 rounded-full blur-[120px]"
+          />
+          <motion.div 
+            animate={{ 
+              scale: [1, 1.3, 1],
+              opacity: [0.05, 0.1, 0.05],
+              x: [0, -30, 0],
+              y: [0, 40, 0]
+            }}
+            transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] bg-yellow-500/10 rounded-full blur-[120px]"
+          />
+        </div>
+
+        {/* School Identity Section (Header) */}
+        <div className="relative z-10 pt-8 sm:pt-12 pb-4 flex flex-col items-center gap-2 sm:gap-4 text-center px-6 shrink-0">
+          <motion.div 
+            initial={{ y: -30, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            className="w-14 h-14 sm:w-20 sm:h-20 flex items-center justify-center overflow-hidden drop-shadow-[0_0_20px_rgba(34,197,94,0.3)] bg-white/5 p-1.5 rounded-xl backdrop-blur-sm border border-white/10"
+          >
+            {schoolLogo ? (
+              <img src={schoolLogo} className="w-full h-full object-contain" alt="Logo" />
+            ) : (
+              <Users className="w-10 h-10 text-white/30" />
+            )}
+          </motion.div>
+          <motion.div
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.3, duration: 1 }}
+          >
+            <h3 className="text-lg sm:text-2xl lg:text-3xl font-serif font-bold tracking-[0.05em] leading-tight text-white drop-shadow-[0_4px_15px_rgba(0,0,0,0.8)] max-w-4xl">{schoolName}</h3>
+            <div className="flex items-center justify-center gap-3 mt-1 sm:mt-2">
+              <div className="h-px w-6 sm:w-12 bg-gradient-to-r from-transparent to-white/40"></div>
+              <p className="text-[10px] sm:text-xs lg:text-sm font-mono text-[#A5D6A7] uppercase tracking-[0.3em] font-bold">{graduationTheme}</p>
+              <div className="h-px w-6 sm:w-12 bg-gradient-to-l from-transparent to-white/40"></div>
+            </div>
+          </motion.div>
+        </div>
+
+        <div className="absolute top-4 right-4 flex gap-4 no-print z-30">
+          <button onClick={() => setView('admin')} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors" title="Kembali ke Dashboard">
+            <Settings className="w-5 h-5" />
+          </button>
+          <button onClick={toggleFullscreen} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
+            {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+          </button>
+        </div>
+
+        {/* Main Content Area */}
+        <div className="flex-1 relative z-10 flex flex-col items-center justify-center px-6 sm:px-12 py-4 overflow-hidden">
+          <AnimatePresence mode="wait">
+            {currentPerformance ? (
+              <motion.div 
+                key={currentPerformance.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.1 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="w-full max-w-6xl flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-16"
+              >
+                {/* Photo Section */}
+                <div className="relative shrink-0">
+                  <motion.div 
+                    initial={{ x: -50, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: 0.5, duration: 1 }}
+                    className="w-48 h-60 sm:w-72 sm:h-96 lg:w-[400px] lg:h-[500px] rounded-[40px] overflow-hidden border-4 border-white/20 shadow-[0_30px_60px_rgba(0,0,0,0.5)] relative z-10"
+                  >
+                    {currentPerformance.photoUrl ? (
+                      <img 
+                        src={currentPerformance.photoUrl} 
+                        className="w-full h-full object-cover"
+                        alt={currentPerformance.performer}
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-white/5 flex items-center justify-center">
+                        <Sparkles className="w-24 h-24 text-green-300/30 animate-pulse" />
+                      </div>
+                    )}
+                  </motion.div>
+                  {/* Decorative frame elements */}
+                  <div className="absolute -top-4 -left-4 w-24 h-24 border-t-4 border-l-4 border-yellow-500/40 rounded-tl-3xl z-0" />
+                  <div className="absolute -bottom-4 -right-4 w-24 h-24 border-b-4 border-r-4 border-yellow-500/40 rounded-br-3xl z-0" />
+                </div>
+
+                {/* Info Section */}
+                <div className="flex-1 text-center lg:text-left space-y-4 sm:space-y-8">
+                  <motion.div
+                    initial={{ y: 30, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.7, duration: 0.8 }}
+                  >
+                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-green-500/15 border border-green-500/30 mb-2 sm:mb-4">
+                      <Sparkles className="w-4 h-4 text-yellow-400" />
+                      <p className="text-yellow-300 font-mono text-xs sm:text-sm uppercase tracking-[0.3em] font-black drop-shadow-md">PENAMPILAN ACARA</p>
+                    </div>
+                    <h1 className="text-4xl sm:text-6xl lg:text-8xl font-serif font-black tracking-tight leading-none text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] uppercase">
+                      {currentPerformance.title}
+                    </h1>
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ y: 30, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.9, duration: 0.8 }}
+                    className="space-y-2 sm:space-y-4"
+                  >
+                    <h2 className="text-xl sm:text-3xl lg:text-5xl font-serif font-bold text-green-300 drop-shadow-md">
+                      oleh: {currentPerformance.performer}
+                    </h2>
+                    {currentPerformance.description && (
+                      <p className="text-sm sm:text-lg lg:text-2xl text-white/70 font-medium max-w-2xl leading-relaxed">
+                        {currentPerformance.description}
+                      </p>
+                    )}
+                  </motion.div>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="text-center space-y-6">
+                <Sparkles className="w-24 h-24 text-white/10 mx-auto" />
+                <p className="text-2xl font-serif text-white/40 italic">Belum ada data acara penampilan yang dipilih</p>
+              </div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Footer Section */}
+        <div className="relative z-10 py-8 sm:py-12 px-12 shrink-0 flex flex-col items-center gap-6">
+          <div className="h-px w-full max-w-4xl bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+          <div className="flex items-center gap-8 sm:gap-16">
+            <div className="text-center">
+              <p className="text-[10px] sm:text-xs font-mono text-white/40 uppercase tracking-widest mb-1">Hari & Tanggal</p>
+              <p className="text-xs sm:text-sm lg:text-lg font-bold text-white/90">{eventDay}, {eventDate}</p>
+            </div>
+            <div className="w-px h-8 bg-white/10" />
+            <div className="text-center">
+              <p className="text-[10px] sm:text-xs font-mono text-white/40 uppercase tracking-widest mb-1">Lokasi Acara</p>
+              <p className="text-xs sm:text-sm lg:text-lg font-bold text-white/90">{eventLocation}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation Controls (Overlay) */}
+        <div className="absolute bottom-10 right-10 flex gap-4 no-print z-30">
+          <button 
+            onClick={() => setCurrentPerformanceIndex(prev => Math.max(0, prev - 1))}
+            disabled={currentPerformanceIndex === 0}
+            className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed group"
+          >
+            <ChevronLeft className="w-6 h-6 sm:w-8 sm:h-8 text-white group-hover:-translate-x-1 transition-transform" />
+          </button>
+          <button 
+            onClick={() => setCurrentPerformanceIndex(prev => Math.min(performances.length - 1, prev + 1))}
+            disabled={currentPerformanceIndex === performances.length - 1}
+            className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center hover:bg-white/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed group"
+          >
+            <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8 text-white group-hover:translate-x-1 transition-transform" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'projector-best-graduates') {
+    const listBest = [];
+    // Ensure all best graduates are sorted by grade DESC
+    const filteredBest = students.filter(s => s.achievement?.includes('[LULUSAN TERBAIK]'))
+      .sort((a, b) => (b.grade || 0) - (a.grade || 0));
+      
+    const bestGraduates = filteredBest.length > 0 
+      ? filteredBest 
+      : [...students]
+          .filter(s => s.grade)
+          .sort((a, b) => (b.grade || 0) - (a.grade || 0))
+          .slice(0, 5);
+          
+    const currentStudent = bestGraduates[currentBestIndex] || bestGraduates[0];
+
+    // Determine Rank Configurations for 1st, 2nd, and 3rd Place
+    const rankConfig = (() => {
+      const idx = currentBestIndex;
+      if (idx === 0) {
+        return {
+          title: "🏆 LULUSAN TERBAIK I (PERTAMA) 🏆",
+          desc: "Siswa Berprestasi Utama Tingkat Sekolah",
+          badgeColor: "bg-gradient-to-br from-yellow-400 via-amber-500 to-yellow-600 text-black border-yellow-300 shadow-yellow-500/40",
+          glowColor: "from-yellow-400/45 via-yellow-500/20 to-amber-500/40 border-yellow-400",
+          glowBg: "from-yellow-500/40 via-amber-450/20 to-yellow-500/40",
+          badgeLabel: "RANK 1",
+          textClass: "text-yellow-300 bg-gradient-to-r from-yellow-250 via-white to-yellow-100 bg-clip-text text-transparent drop-shadow-[0_4px_12px_rgba(234,179,8,0.35)]",
+          cardBorder: "border-2 border-yellow-400/50 shadow-[0_8px_40px_rgba(234,179,8,0.18)]",
+          iconColor: "text-yellow-400 bg-yellow-500/10 border-yellow-400/20",
+          bgClass: "bg-yellow-500/20",
+          borderClass: "border-yellow-400/50"
+        };
+      } else if (idx === 1) {
+        return {
+          title: "🥈 LULUSAN TERBAIK II (KEDUA) 🥈",
+          desc: "Siswa Berprestasi Kedua Tingkat Sekolah",
+          badgeColor: "bg-gradient-to-br from-slate-200 via-slate-400 to-zinc-500 text-black border-slate-300 shadow-slate-400/40",
+          glowColor: "from-slate-400/40 via-slate-500/15 to-slate-400/30 border-slate-300",
+          glowBg: "from-slate-400/30 via-slate-500/15 to-slate-400/30",
+          badgeLabel: "RANK 2",
+          textClass: "text-slate-200 bg-gradient-to-r from-slate-100 via-white to-slate-200 bg-clip-text text-transparent drop-shadow-[0_4px_12px_rgba(148,163,184,0.3)]",
+          cardBorder: "border border-slate-450 rounded-[24px] shadow-[0_8px_40px_rgba(148,163,184,0.12)]",
+          iconColor: "text-slate-300 bg-slate-400/10 border-slate-400/20",
+          bgClass: "bg-slate-400/20",
+          borderClass: "border-slate-400/50"
+        };
+      } else if (idx === 2) {
+        return {
+          title: "🥉 LULUSAN TERBAIK III (KETIGA) 🥉",
+          desc: "Siswa Berprestasi Ketiga Tingkat Sekolah",
+          badgeColor: "bg-gradient-to-br from-amber-600 via-amber-700 to-orange-850 text-white border-amber-500 shadow-amber-700/40",
+          glowColor: "from-amber-600/40 via-amber-700/15 to-orange-600/30 border-amber-600",
+          glowBg: "from-amber-600/35 via-amber-750/15 to-amber-600/35",
+          badgeLabel: "RANK 3",
+          textClass: "text-amber-400 bg-gradient-to-r from-amber-200 via-white to-orange-200 bg-clip-text text-transparent drop-shadow-[0_4px_12px_rgba(217,119,6,0.3)]",
+          cardBorder: "border border-amber-600/50 rounded-[24px] shadow-[0_8px_40px_rgba(217,119,6,0.12)]",
+          iconColor: "text-amber-400 bg-amber-600/10 border-amber-600/20",
+          bgClass: "bg-orange-950/30",
+          borderClass: "border-amber-600/40"
+        };
+      } else {
+        return {
+          title: `🎖️ WISUDAWAN TERBAIK PERINGKAT ${idx + 1} 🎖️`,
+          desc: "Siswa Berprestasi Unggulan Tingkat Sekolah",
+          badgeColor: "bg-gradient-to-br from-green-500 to-emerald-700 text-white border-green-400 shadow-green-500/30",
+          glowColor: "from-green-500/30 via-emerald-600/15 to-green-500/30 border-green-500",
+          glowBg: "from-green-500/25 via-emerald-600/10 to-green-500/25",
+          badgeLabel: `RANK ${idx + 1}`,
+          textClass: "text-white bg-gradient-to-r from-white via-white to-white bg-clip-text text-transparent",
+          cardBorder: "border border-white/10 rounded-[24px] shadow-[0_8px_30px_rgba(255,255,255,0.05)]",
+          iconColor: "text-green-300 bg-green-500/10 border-green-500/20",
+          bgClass: "bg-green-500/20",
+          borderClass: "border-green-500/45"
+        };
+      }
+    })();
+
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-[#0a2e0a] via-[#1b5e20] to-[#0a2e0a] text-white z-50 flex flex-col overflow-hidden">
+        {/* Decorative background elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <motion.div 
+            animate={{ 
+              scale: [1, 1.2, 1],
+              opacity: [0.15, 0.2, 0.15],
+              x: [0, 50, 0],
+              y: [0, -50, 0]
+            }}
+            transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+            className={`absolute -top-[20%] -left-[10%] w-[60%] h-[60%] rounded-full blur-[120px] ${
+              currentBestIndex === 0 ? "bg-yellow-500/20" : currentBestIndex === 1 ? "bg-slate-350/15" : "bg-amber-600/15"
+            }`}
+          />
+          <motion.div 
+            animate={{ 
+              scale: [1, 1.3, 1],
+              opacity: [0.08, 0.15, 0.08],
+              x: [0, -30, 0],
+              y: [0, 40, 0]
+            }}
+            transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] bg-emerald-500/15 rounded-full blur-[120px]"
+          />
+          
+          {/* Sparkly Particles for Best Graduates */}
+          {[...Array(25)].map((_, i) => (
+            <motion.div
+              key={i}
+              initial={{ 
+                x: Math.random() * 100 + "%", 
+                y: Math.random() * 100 + "%",
+                opacity: 0 
+              }}
+              animate={{ 
+                y: [null, "-100%"],
+                opacity: [0, 0.7, 0],
+                scale: [0, Math.random() * 1.6 + 0.4, 0]
+              }}
+              transition={{ 
+                duration: Math.random() * 10 + 6, 
+                repeat: Infinity, 
+                delay: Math.random() * 6,
+                ease: "linear"
+              }}
+              className={`absolute w-1.5 h-1.5 rounded-full blur-[0.5px] ${
+                currentBestIndex === 0 ? "bg-yellow-300" : currentBestIndex === 1 ? "bg-slate-250" : "bg-amber-400"
+              }`}
+            />
+          ))}
+        </div>
+
+        {/* School Identity Section (Header) */}
+        <div className="relative z-10 pt-8 sm:pt-12 pb-4 flex flex-col items-center gap-2 sm:gap-4 text-center px-6 shrink-0">
+          <motion.div 
+            initial={{ y: -30, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            className="w-14 h-14 sm:w-20 sm:h-20 flex items-center justify-center overflow-hidden drop-shadow-[0_0_20px_rgba(234,179,8,0.4)] bg-white/5 p-1.5 rounded-xl backdrop-blur-sm border border-white/10"
+          >
+            {schoolLogo ? (
+              <img src={schoolLogo} className="w-full h-full object-contain" alt="Logo" />
+            ) : (
+              <Users className="w-10 h-10 text-white/30" />
+            )}
+          </motion.div>
+          <motion.div
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.3, duration: 1 }}
+          >
+            <h3 className="text-lg sm:text-2xl lg:text-3xl font-serif font-bold tracking-[0.05em] leading-tight text-white drop-shadow-[0_4px_15px_rgba(0,0,0,0.8)] max-w-4xl">{schoolName}</h3>
+            <div className="flex items-center justify-center gap-3 mt-1 sm:mt-2">
+              <div className="h-px w-6 sm:w-12 bg-gradient-to-r from-transparent to-white/40"></div>
+              <p className="text-[10px] sm:text-xs lg:text-sm font-mono text-yellow-300 uppercase tracking-[0.3em] font-black">{graduationTheme}</p>
+              <div className="h-px w-6 sm:w-12 bg-gradient-to-l from-transparent to-white/40"></div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Back and Fullscreen Controls */}
+        <div className="absolute top-4 right-4 flex gap-4 no-print z-30">
+          <button onClick={() => setView('admin')} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
+            <Settings className="w-5 h-5" />
+          </button>
+          <button onClick={toggleFullscreen} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
+            {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+          </button>
+        </div>
+
+        {/* Content Section */}
+        <div className="flex-1 relative overflow-hidden">
+          <AnimatePresence mode="wait">
+            {currentStudent ? (
+              <motion.div 
+                key={currentStudent.id}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.5 }}
+                className="absolute inset-0 flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-20 p-6 lg:p-12 overflow-y-auto lg:overflow-hidden"
+              >
+                {/* Photo Section with Floating Medal/Rank Badge */}
+                <div className="w-full lg:w-[40%] flex justify-center lg:justify-end shrink-0">
+                  <motion.div 
+                    initial={{ opacity: 0, x: -100, rotateY: -20, scale: 0.9 }}
+                    animate={{ opacity: 1, x: 0, rotateY: 0, scale: 1 }}
+                    transition={{ 
+                      duration: 1, 
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
+                    className="relative group w-full max-w-[280px] sm:max-w-[380px] lg:max-w-[450px]"
+                  >
+                    {/* Animated gold/silver/bronze glow effect */}
+                    <div className={`absolute -inset-6 bg-gradient-to-tr ${rankConfig.glowBg} rounded-[32px] blur-3xl opacity-60 animate-pulse`}></div>
+                    
+                    {/* Unique Ranking Emblem Badge */}
+                    <div className={`absolute -top-4 -right-4 z-30 w-16 h-16 rounded-full flex flex-col items-center justify-center font-black text-xs shadow-[0_10px_25px_rgba(0,0,0,0.5)] border-2 tracking-widest ${rankConfig.badgeColor}`}>
+                      <span className="text-[8px] uppercase tracking-tighter opacity-80 leading-none">RANK</span>
+                      <span className="text-xl font-bold font-sans mt-0.5">{currentBestIndex + 1}</span>
+                    </div>
+
+                    <motion.div 
+                      whileHover={{ scale: 1.02, rotateY: 5 }}
+                      className={`relative z-10 aspect-[3/4] rounded-[28px] border-4 bg-black/40 overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.4)] backdrop-blur-md ${
+                        currentBestIndex === 0 ? "border-yellow-400" : currentBestIndex === 1 ? "border-slate-300" : "border-amber-600"
+                      }`}
+                    >
+                      {currentStudent.photoUrl ? (
+                        <img 
+                          referrerPolicy="no-referrer"
+                          src={currentStudent.photoUrl} 
+                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
+                          alt={currentStudent.name} 
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-b from-[#1a4a1a] to-[#0a2e0a] flex flex-col items-center justify-center p-8 text-center gap-4">
+                          <div className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full flex items-center justify-center border-2 border-dashed ${
+                            currentBestIndex === 0 ? "text-yellow-400 border-yellow-400/40" : currentBestIndex === 1 ? "text-slate-300 border-slate-300/40" : "text-amber-500 border-amber-550/40"
+                          }`}>
+                            <Trophy className="w-12 h-12 sm:w-16 sm:h-16 animate-bounce" />
+                          </div>
+                          <div>
+                            <p className="text-yellow-400 font-serif font-bold text-lg">Wisudawan Terbaik {currentBestIndex + 1}</p>
+                            <p className="text-white/40 text-xs font-mono mt-1">FOTO BELUM DIUNGGAH</p>
+                          </div>
+                        </div>
+                      )}
+                    </motion.div>
+                    
+                    {/* Golden/silver/bronze decorative corner frames */}
+                    <div className={`absolute -top-4 -left-4 w-24 h-24 border-t-4 border-l-4 rounded-tl-3xl z-0 ${
+                      currentBestIndex === 0 ? "border-yellow-400" : currentBestIndex === 1 ? "border-slate-300" : "border-amber-600"
+                    }`} />
+                    <div className={`absolute -bottom-4 -right-4 w-24 h-24 border-b-4 border-r-4 rounded-br-3xl z-0 ${
+                      currentBestIndex === 0 ? "border-yellow-400" : currentBestIndex === 1 ? "border-slate-300" : "border-amber-600"
+                    }`} />
+                  </motion.div>
+                </div>
+
+                {/* Details Section */}
+                <div className="flex-1 text-center lg:text-left space-y-4 sm:space-y-6 max-w-2xl">
+                  <motion.div
+                    initial={{ y: 30, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.2, duration: 0.6 }}
+                  >
+                    <div className={`inline-flex items-center gap-2 px-5 py-2 rounded-full border mb-3 drop-shadow-[0_0_15px_rgba(234,179,8,0.25)] animate-pulse ${rankConfig.bgClass} ${rankConfig.borderClass}`}>
+                      <Trophy className={`w-5 h-5 ${currentBestIndex === 0 ? "text-yellow-400" : currentBestIndex === 1 ? "text-slate-300" : "text-amber-500"}`} />
+                      <p className={`font-mono text-xs sm:text-sm uppercase tracking-[0.25em] font-black drop-shadow-md`}>{rankConfig.title}</p>
+                    </div>
+                    
+                    <h1 className="text-3xl sm:text-5xl lg:text-6xl xl:text-7xl font-serif font-black leading-tight mb-2 tracking-tight uppercase">
+                      {currentStudent.name}
+                    </h1>
+                    <p className="text-sm sm:text-xl font-bold uppercase tracking-[0.1em] text-green-200 drop-shadow-md">
+                      Nisn: {currentStudent.nisn || '-'}
+                    </p>
+                  </motion.div>
+
+                  <div className="h-px bg-gradient-to-r from-transparent via-yellow-400/20 to-transparent lg:from-yellow-400/20 lg:to-transparent" />
+
+                  <motion.div
+                    initial={{ y: 35, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.4, duration: 0.5 }}
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6"
+                  >
+                    {/* Nilai Rata-rata card */}
+                    <div className={`bg-white/5 p-4 sm:p-5 rounded-[24px] border backdrop-blur-md hover:bg-white/10 transition-all duration-300 ${rankConfig.cardBorder}`}>
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shadow-inner border animate-pulse shrink-0 ${rankConfig.iconColor}`}>
+                          <Trophy className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-[9px] sm:text-[10px] font-mono text-yellow-300 uppercase tracking-widest font-black drop-shadow-sm">NILAI RATA-RATA</p>
+                          <p className="font-serif font-black text-2xl sm:text-3xl text-yellow-250 drop-shadow-md leading-none mt-1">
+                            {currentStudent.grade || '-'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Predikat Card */}
+                    <div className="bg-white/5 p-4 sm:p-5 rounded-[24px] border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all duration-300">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/5 flex items-center justify-center text-blue-400 shadow-inner border border-white/5 shrink-0">
+                          <GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-[9px] sm:text-[10px] font-mono text-white/60 uppercase tracking-widest font-bold">PREDIKAT KELULUSAN</p>
+                          <p className="font-bold text-lg sm:text-xl text-white leading-none mt-1 truncate">
+                            {currentStudent.predicate || 'DENGAN PUJIAN'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Kelas & Jurusan */}
+                    <div className="bg-white/5 p-4 sm:p-5 rounded-[24px] border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all duration-300">
+                      <div className="flex items-center gap-3 sm:gap-4">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/5 flex items-center justify-center text-emerald-400 shadow-inner border border-white/5 shrink-0">
+                          <Users className="w-5 h-5 sm:w-6 sm:h-6 animate-none" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-[9px] sm:text-[10px] font-mono text-white/70 uppercase tracking-widest font-bold">KELAS & JURUSAN</p>
+                          <p className="font-bold text-base sm:text-lg text-white mt-1 leading-snug">
+                            {currentStudent.class ? `${currentStudent.class} - ${currentStudent.major}` : currentStudent.major}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Prestasi Card */}
+                    <div className="bg-white/5 p-4 sm:p-5 rounded-[24px] border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all duration-300">
+                      <div className="flex items-center gap-3 sm:gap-4">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/5 flex items-center justify-center text-purple-400 shadow-inner border border-white/5 shrink-0">
+                          <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-[9px] sm:text-[10px] font-mono text-white/70 uppercase tracking-widest font-bold">PRESTASI UTAMA</p>
+                          <p className="font-bold text-base sm:text-lg text-white mt-1 leading-snug truncate">
+                            {currentStudent.achievement ? currentStudent.achievement.replace('[LULUSAN TERBAIK]', '').trim() : '-'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-center p-6">
+                <div className="max-w-md">
+                  <Trophy className="w-20 h-20 text-yellow-400/30 mx-auto mb-4 animate-bounce" />
+                  <h1 className="text-3xl font-serif font-black">Layanan Wisudawan Terbaik</h1>
+                  <p className="text-white/60 mt-3 text-sm leading-relaxed">
+                    Belum ada siswa yang ditandai sebagai Lulusan Terbaik. Silakan tandai siswa pilihan di menu data siswa!
+                  </p>
+                </div>
+              </div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Navigation Controls / Footer */}
+        {bestGraduates.length > 1 && (
+          <div className="relative z-30 py-8 flex justify-center shrink-0">
+            <div className="flex items-center gap-4 sm:gap-8 no-print bg-black/40 backdrop-blur-xl px-4 sm:px-6 py-2 sm:py-3 rounded-full border border-white/10 shadow-2xl shadow-black/50">
+              <motion.button 
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setCurrentBestIndex(prev => Math.max(0, prev - 1))}
+                className="p-2 sm:p-3 bg-white/10 rounded-full hover:bg-white/20 transition-all border border-white/10"
+              >
+                <ChevronLeft className="w-5 h-5 sm:w-7 sm:h-7 text-white" />
+              </motion.button>
+              
+              <div className="flex flex-col items-center gap-0.5">
+                <div className="flex items-center gap-2 font-mono text-xs sm:text-sm">
+                  <span className="text-yellow-300 font-black">Wisudawan Ke-{currentBestIndex + 1}</span>
+                  <span className="text-white/30">/</span>
+                  <span className="text-white/50">{bestGraduates.length}</span>
+                </div>
+                <div className="w-16 sm:w-24 h-1 bg-white/10 rounded-full overflow-hidden">
+                  <motion.div 
+                    className="h-full bg-yellow-400"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${((currentBestIndex + 1) / bestGraduates.length) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              <motion.button 
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setCurrentBestIndex(prev => Math.min(bestGraduates.length - 1, prev + 1))}
+                className="p-2 sm:p-3 bg-white/10 rounded-full hover:bg-white/20 transition-all border border-white/10"
+              >
+                <ChevronRight className="w-5 h-5 sm:w-7 sm:h-7 text-white" />
+              </motion.button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-[#F5F5F0] flex relative">
@@ -1426,6 +2199,7 @@ export default function App() {
               { id: 'invitation', icon: Printer, label: 'Cetak Undangan' },
               { id: 'registration', icon: QrCode, label: 'Registrasi Ulang' },
               { id: 'speeches', icon: MessageSquare, label: 'Sambutan' },
+              { id: 'performances', icon: Sparkles, label: 'Acara Penampilan' },
               { id: 'users', icon: UserPlus, label: 'Manajemen User', adminOnly: true },
               { id: 'settings', icon: Settings, label: 'Pengaturan Sekolah', adminOnly: true },
             ].map((tab) => {
@@ -1465,6 +2239,16 @@ export default function App() {
               </button>
               <button 
                 onClick={() => {
+                  setView('projector-best-graduates');
+                  setIsSidebarOpen(false);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20 transition-all border border-yellow-500/20"
+              >
+                <Trophy className="w-5 h-5 text-yellow-400" />
+                <span className="font-extrabold">Layar Wisudawan Terbaik</span>
+              </button>
+              <button 
+                onClick={() => {
                   setView('projector-speech');
                   setIsSidebarOpen(false);
                 }}
@@ -1472,6 +2256,16 @@ export default function App() {
               >
                 <MessageSquare className="w-5 h-5" />
                 <span>Layar Sambutan</span>
+              </button>
+              <button 
+                onClick={() => {
+                  setView('projector-performance');
+                  setIsSidebarOpen(false);
+                }}
+                className="w-full flex items-center gap-3 px-[#10px] sm:px-4 py-3 rounded-2xl bg-white/5 text-white hover:bg-white/10 transition-all border border-white/5"
+              >
+                <Sparkles className="w-5 h-5 text-pink-400" />
+                <span>Layar Penampilan</span>
               </button>
             </div>
           </nav>
@@ -1521,6 +2315,7 @@ export default function App() {
                   {activeTab === 'invitation' && "Cetak Kartu Undangan"}
                   {activeTab === 'registration' && "Registrasi Ulang"}
                   {activeTab === 'speeches' && "Manajemen Sambutan"}
+                  {activeTab === 'performances' && "Manajemen Acara Penampilan"}
                   {activeTab === 'users' && "Manajemen User"}
                   {activeTab === 'settings' && "Pengaturan Sekolah"}
                 </motion.h2>
@@ -1535,6 +2330,7 @@ export default function App() {
                    activeTab === 'invitation' ? "Cetak kartu undangan untuk wisudawan." :
                    activeTab === 'registration' ? "Kelola kehadiran wisudawan di lokasi." :
                    activeTab === 'speeches' ? "Kelola daftar pemberi sambutan acara." :
+                   activeTab === 'performances' ? "Kelola daftar penampil seni dan acara wisuda." :
                    "Kelola informasi wisudawan SMK Anda di sini."}
                 </motion.p>
               </div>
@@ -1730,9 +2526,14 @@ export default function App() {
                     </div>
 
                     <div className="space-y-5">
-                      {students
-                        .filter(s => s.grade)
-                        .sort((a, b) => (b.grade || 0) - (a.grade || 0))
+                       {students
+                        .filter(s => s.grade || s.achievement?.includes('[LULUSAN TERBAIK]'))
+                        .sort((a, b) => {
+                          const aBest = a.achievement?.includes('[LULUSAN TERBAIK]') ? 1 : 0;
+                          const bBest = b.achievement?.includes('[LULUSAN TERBAIK]') ? 1 : 0;
+                          if (aBest !== bBest) return bBest - aBest;
+                          return (b.grade || 0) - (a.grade || 0);
+                        })
                         .slice(0, 5)
                         .map((student, idx) => (
                           <motion.div 
@@ -1744,24 +2545,31 @@ export default function App() {
                           >
                             <div className={cn(
                               "w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg transition-transform group-hover:scale-110",
-                              idx === 0 ? "bg-yellow-100 text-yellow-600 shadow-lg shadow-yellow-200" :
+                              idx === 0 || student.achievement?.includes('[LULUSAN TERBAIK]') ? "bg-yellow-100 text-yellow-600 shadow-lg shadow-yellow-200" :
                               idx === 1 ? "bg-slate-100 text-slate-500" :
                               idx === 2 ? "bg-orange-50 text-orange-600" :
                               "bg-gray-50 text-gray-400"
                             )}>
-                              {idx + 1}
+                              {student.achievement?.includes('[LULUSAN TERBAIK]') ? '🏆' : idx + 1}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="font-black text-gray-900 truncate text-sm">{student.name}</p>
+                              <p className="font-black text-gray-900 truncate text-sm flex items-center gap-1.5">
+                                {student.name}
+                                {student.achievement?.includes('[LULUSAN TERBAIK]') && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-yellow-50 text-yellow-700 text-[8px] font-black uppercase rounded-full border border-yellow-200">
+                                    Lulusan Terbaik
+                                  </span>
+                                )}
+                              </p>
                               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider truncate">{student.major}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-lg font-black text-green-600 leading-none">{student.grade}</p>
-                              <p className="text-[8px] text-gray-400 uppercase font-black tracking-tighter mt-1">{student.predicate}</p>
+                              <p className="text-lg font-black text-green-600 leading-none">{student.grade || '-'}</p>
+                              <p className="text-[8px] text-gray-400 uppercase font-black tracking-tighter mt-1">{student.predicate || 'LULUSAN'}</p>
                             </div>
                           </motion.div>
                         ))}
-                      {students.filter(s => s.grade).length === 0 && (
+                      {students.filter(s => s.grade || s.achievement?.includes('[LULUSAN TERBAIK]')).length === 0 && (
                         <div className="flex flex-col items-center justify-center py-20 text-center">
                           <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
                             <Users className="w-8 h-8 text-gray-200" />
@@ -1859,7 +2667,7 @@ export default function App() {
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
                           onClick={() => setActiveTab('registration')}
-                          className="px-10 py-5 bg-green-600 text-white rounded-[24px] font-black uppercase tracking-widest text-xs hover:bg-green-500 transition-all shadow-xl shadow-green-900/40 flex items-center gap-3"
+                          className="px-8 py-5 bg-green-600 text-white rounded-[24px] font-black uppercase tracking-widest text-xs hover:bg-green-500 transition-all shadow-xl shadow-green-900/40 flex items-center gap-2"
                         >
                           Mulai Registrasi
                           <ArrowRight className="w-4 h-4" />
@@ -1868,10 +2676,18 @@ export default function App() {
                           whileHover={{ scale: 1.05, backgroundColor: 'rgba(255,255,255,0.15)' }}
                           whileTap={{ scale: 0.95 }}
                           onClick={() => setView('projector')}
-                          className="px-10 py-5 bg-white/10 backdrop-blur-md text-white rounded-[24px] font-black uppercase tracking-widest text-xs border border-white/10 transition-all flex items-center gap-3"
+                          className="px-8 py-5 bg-white/10 backdrop-blur-md text-white rounded-[24px] font-black uppercase tracking-widest text-xs border border-white/10 transition-all flex items-center gap-2"
                         >
                           Buka Layar Proyektor
                           <Monitor className="w-4 h-4" />
+                        </motion.button>
+                        <motion.button 
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setView('projector-best-graduates')}
+                          className="px-8 py-5 bg-gradient-to-r from-yellow-500 to-amber-600 text-white rounded-[24px] font-black uppercase tracking-widest text-xs transition-all shadow-xl shadow-yellow-900/40 flex items-center gap-2 border border-yellow-400/30"
+                        >
+                          Wisudawan Terbaik 🏆
                         </motion.button>
                       </div>
                     </div>
@@ -2023,6 +2839,7 @@ export default function App() {
                         {[
                           'Kolom wajib: Nama, NISN, Kelas, Gender (L/P)',
                           'Opsional: Nilai, Prestasi, Alamat, Orang Tua',
+                          'Gunakan NISN yang sama untuk update data',
                           'Sistem akan otomatis menentukan Jurusan',
                           'Predikat dihitung otomatis dari Nilai'
                         ].map((item, i) => (
@@ -2037,7 +2854,14 @@ export default function App() {
                         className="w-full py-4 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 border border-gray-100"
                       >
                         <Download className="w-4 h-4" />
-                        Unduh Template
+                        Unduh Template Utama
+                      </button>
+                      <button 
+                        onClick={downloadParentTemplate}
+                        className="w-full py-4 bg-green-50 hover:bg-green-100 text-green-700 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 border border-green-100"
+                      >
+                        <Download className="w-4 h-4" />
+                        Template Ortu & Alamat
                       </button>
                     </div>
                   </div>
@@ -2907,7 +3731,15 @@ export default function App() {
                                   )}
                                 </div>
                                 <div>
-                                  <p className="font-bold text-gray-900 text-sm leading-tight">{student.name}</p>
+                                  <p className="font-bold text-gray-900 text-sm leading-tight flex items-center gap-1.5 flex-wrap">
+                                    {student.name}
+                                    {student.achievement?.includes('[LULUSAN TERBAIK]') && (
+                                      <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-yellow-50 text-yellow-700 text-[9px] font-black uppercase rounded-full border border-yellow-200 shadow-sm shadow-yellow-100">
+                                        <Trophy className="w-2.5 h-2.5 text-yellow-500" />
+                                        Lulusan Terbaik
+                                      </span>
+                                    )}
+                                  </p>
                                   <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{student.major}</p>
                                   <div className="sm:hidden mt-0.5 flex gap-1">
                                     <span className="text-[8px] font-bold text-gray-500 uppercase bg-gray-100 px-1 rounded">{student.gender || '-'}</span>
@@ -3050,6 +3882,107 @@ export default function App() {
                     <div className="col-span-full py-20 text-center bg-white rounded-[40px] border-2 border-dashed border-gray-200">
                       <MessageSquare className="w-16 h-16 text-gray-200 mx-auto mb-4" />
                       <p className="text-gray-400 font-medium italic">Belum ada data sambutan.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'performances' && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <h3 className="text-2xl font-serif font-bold text-gray-900">Manajemen Acara Penampilan</h3>
+                    <p className="text-sm text-gray-500 mt-1">Kelola daftar pengisi acara, penampilan seni, dan urutan panggung.</p>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setEditingPerformance({
+                        title: '',
+                        performer: '',
+                        description: '',
+                        photoUrl: '',
+                        order: performances.length + 1
+                      });
+                      setIsPerformanceModalOpen(true);
+                    }}
+                    className="w-full sm:w-auto bg-[#2e7d32] text-white px-6 py-3 rounded-2xl font-bold hover:bg-[#1b5e20] transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-900/10 active:scale-95"
+                  >
+                    <Sparkles className="w-5 h-5 text-yellow-300" />
+                    Tambah Penampilan
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {performances.map((perf, index) => (
+                    <motion.div
+                      key={perf.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                      className="bg-white rounded-[32px] border border-gray-100 shadow-xl overflow-hidden group hover:shadow-2xl transition-all duration-300"
+                    >
+                      <div className="aspect-[4/3] relative overflow-hidden">
+                        {perf.photoUrl ? (
+                          <img src={perf.photoUrl} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt={perf.title} />
+                        ) : (
+                          <div className="w-full h-full bg-indigo-50 flex items-center justify-center">
+                            <Sparkles className="w-12 h-12 text-indigo-300" />
+                          </div>
+                        )}
+                        <div className="absolute top-4 right-4 flex gap-2">
+                          <button 
+                            onClick={() => {
+                              setEditingPerformance({
+                                id: perf.id,
+                                title: perf.title,
+                                performer: perf.performer,
+                                description: perf.description || '',
+                                photoUrl: perf.photoUrl || '',
+                                order: perf.order
+                              });
+                              setIsPerformanceModalOpen(true);
+                            }}
+                            className="p-2 bg-white/95 backdrop-blur-sm rounded-xl text-blue-600 shadow-lg hover:bg-blue-600 hover:text-white transition-all animate-none"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => deletePerformance(perf.id)}
+                            className="p-2 bg-white/95 backdrop-blur-sm rounded-xl text-red-600 shadow-lg hover:bg-red-600 hover:text-white transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="absolute bottom-4 left-4">
+                          <span className="px-3 py-1 bg-black/50 backdrop-blur-md text-white text-[10px] font-bold rounded-full border border-white/20">
+                            Urutan: {perf.order}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-6">
+                        <h4 className="text-lg font-bold text-gray-900 leading-tight mb-1">{perf.title}</h4>
+                        <p className="text-sm font-bold text-indigo-600 mb-3">oleh: {perf.performer}</p>
+                        <p className="text-xs text-gray-500 line-clamp-3 leading-relaxed">{perf.description}</p>
+                        <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end">
+                          <button
+                            onClick={() => {
+                              setCurrentPerformanceIndex(index);
+                              setView('projector-performance');
+                            }}
+                            className="text-xs font-bold text-green-700 bg-green-50 px-3 py-1.5 rounded-xl hover:bg-green-100 transition-colors flex items-center gap-1"
+                          >
+                            <Monitor className="w-3.5 h-3.5" />
+                            Tampilkan di Layar
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {performances.length === 0 && (
+                    <div className="col-span-full py-20 text-center bg-white rounded-[40px] border-2 border-dashed border-gray-200">
+                      <Sparkles className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-400 font-medium italic">Belum ada data acara penampilan.</p>
                     </div>
                   )}
                 </div>
@@ -3426,6 +4359,128 @@ export default function App() {
               </motion.div>
             </div>
           )}
+
+          {isPerformanceModalOpen && editingPerformance && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+              >
+                <div className="p-8 border-b border-gray-100 flex justify-between items-center">
+                  <h3 className="text-2xl font-serif font-bold text-[#1a1a1a]">
+                    {editingPerformance.id ? 'Edit Data Acara Penampilan' : 'Tambah Acara Penampilan Baru'}
+                  </h3>
+                  <button onClick={() => setIsPerformanceModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                    <Minimize2 className="w-6 h-6" />
+                  </button>
+                </div>
+
+                <div className="p-8 overflow-y-auto flex-1 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Nama Acara / Penampilan</label>
+                      <input 
+                        type="text" 
+                        value={editingPerformance.title || ''}
+                        onChange={(e) => setEditingPerformance({...editingPerformance, title: e.target.value})}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none"
+                        placeholder="Contoh: Seni Tari Tradisional, Paduan Suara, Solo Song"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Pengisi Acara / Penampil</label>
+                      <input 
+                        type="text" 
+                        value={editingPerformance.performer || ''}
+                        onChange={(e) => setEditingPerformance({...editingPerformance, performer: e.target.value})}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none"
+                        placeholder="Contoh: Siswa Kelas XII, Grup Band Sekolah"
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Keterangan / Deskripsi Penampilan</label>
+                      <textarea 
+                        value={editingPerformance.description || ''}
+                        onChange={(e) => setEditingPerformance({...editingPerformance, description: e.target.value})}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none h-24 resize-none"
+                        placeholder="Berikan deskripsi singkat tentang penampilan ini."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Urutan Tampil</label>
+                      <input 
+                        type="number" 
+                        value={editingPerformance.order || ''}
+                        onChange={(e) => setEditingPerformance({...editingPerformance, order: Number(e.target.value)})}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none"
+                      />
+                    </div>
+                    <div className="space-y-2 col-span-2">
+                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider block mb-2">Foto Acara / Penampil</label>
+                      <div className="flex gap-4 items-center">
+                        <div className="w-24 h-24 bg-gray-100 rounded-2xl overflow-hidden border-2 border-dashed border-gray-200 flex items-center justify-center relative group">
+                          {editingPerformance.photoUrl ? (
+                            <img src={editingPerformance.photoUrl} className="w-full h-full object-cover" alt="" />
+                          ) : (
+                            <Camera className="w-8 h-8 text-gray-300" />
+                          )}
+                          {isUploading && (
+                             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                               <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                             </div>
+                          )}
+                        </div>
+                        <div className="flex-1 space-y-2">
+                          <input 
+                            type="file" 
+                            id="performance-photo-upload"
+                            accept="image/*"
+                            onChange={handlePerformancePhotoUpload}
+                            className="hidden"
+                          />
+                          <label 
+                            htmlFor="performance-photo-upload"
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl cursor-pointer transition-all text-sm font-medium"
+                          >
+                            <Upload className="w-4 h-4" />
+                            {editingPerformance.photoUrl ? 'Ganti Foto' : 'Unggah Foto'}
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-8 bg-gray-50 flex justify-end gap-4">
+                  <button 
+                    onClick={() => setIsPerformanceModalOpen(false)}
+                    className="px-8 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button 
+                    onClick={savePerformance}
+                    disabled={isSavingPerformance}
+                    className="px-8 py-3 bg-[#2e7d32] text-white rounded-xl font-bold hover:bg-[#1b5e20] transition-all shadow-lg shadow-green-900/10 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {isSavingPerformance ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Menyimpan...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-5 h-5" />
+                        Simpan Penampilan
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
         </AnimatePresence>
 
         {/* Student Form Modal */}
@@ -3586,13 +4641,57 @@ export default function App() {
                         className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-gray-500 outline-none cursor-not-allowed"
                       />
                     </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Prestasi</label>
-                      <textarea 
-                        value={editingStudent.achievement || ''}
-                        onChange={(e) => setEditingStudent({...editingStudent, achievement: e.target.value.toUpperCase()})}
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none h-24 resize-none"
-                      />
+                    <div className="space-y-4 md:col-span-2">
+                      <div className="flex items-start gap-3 p-4 bg-yellow-50/70 rounded-2xl border border-yellow-200">
+                        <input 
+                          type="checkbox" 
+                          id="is-best-graduate"
+                          checked={editingStudent?.achievement?.includes('[LULUSAN TERBAIK]') || false}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            const rawAch = (editingStudent?.achievement || '')
+                              .replace('[LULUSAN TERBAIK]', '')
+                              .trim();
+                              
+                            if (checked) {
+                              setEditingStudent({
+                                ...editingStudent,
+                                achievement: `[LULUSAN TERBAIK] ${rawAch}`.trim().toUpperCase()
+                              });
+                            } else {
+                              setEditingStudent({
+                                ...editingStudent,
+                                achievement: rawAch.toUpperCase()
+                              });
+                            }
+                          }}
+                          className="w-5 h-5 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500 cursor-pointer mt-0.5"
+                        />
+                        <div className="flex-1">
+                          <label htmlFor="is-best-graduate" className="text-sm font-black text-yellow-800 cursor-pointer select-none flex items-center gap-1.5">
+                            <Trophy className="w-4 h-4 text-yellow-600" />
+                            Tandai sebagai Lulusan Terbaik 🏆
+                          </label>
+                          <p className="text-[10px] text-yellow-600 font-bold leading-normal mt-0.5">Siswa ini akan ditandai dengan lencana khusus emas di dashboard admin, tabel data siswa, dan layar proyektor wisuda!</p>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Prestasi</label>
+                        <textarea 
+                          value={editingStudent?.achievement ? editingStudent.achievement.replace('[LULUSAN TERBAIK]', '').trim() : ''}
+                          onChange={(e) => {
+                            const val = e.target.value.toUpperCase();
+                            const isBest = editingStudent?.achievement?.includes('[LULUSAN TERBAIK]') || false;
+                            setEditingStudent({
+                              ...editingStudent,
+                              achievement: isBest ? `[LULUSAN TERBAIK] ${val}`.trim() : val
+                            });
+                          }}
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-[#2e7d32] outline-none h-24 resize-none"
+                          placeholder="Masukkan prestasi tambahan (contoh: JUARA 1 LKS PROVINSI, KETUA OSIS)"
+                        />
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-mono text-gray-500 uppercase tracking-wider">Nama Orang Tua</label>
